@@ -208,6 +208,12 @@ Stated plainly, because performance tools that oversell are worse than useless:
   results.
 - **No benchmarks, no value.** This optimizes what it can measure. `init` tells you
   plainly rather than pretending.
+- **A small measurement asymmetry remains.** Each round measures the baseline a
+  moment before the candidate, so on a machine that is steadily warming up, the
+  candidate is consistently sampled a fraction hotter. Interleaving cancels the
+  drift *between* rounds, which dominates; this sub-second offset does not
+  cancel. It is small next to benchmark variance, but it is a known asymmetry
+  rather than an absent one.
 - **Microbenchmarks are not your application.** A 50 % win on a hot function may be
   invisible end to end. Benchmark what actually matters.
 
