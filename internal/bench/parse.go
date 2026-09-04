@@ -54,24 +54,31 @@ type Set struct {
 func NewSet() *Set { return &Set{Series: map[string]*Series{}} }
 
 // Parse reads Go benchmark format, ignoring any non-benchmark lines.
+// Returns an error if the input contains syntax errors or I/O errors.
 func Parse(r io.Reader) (*Set, error) {
 	set := NewSet()
 	rd := benchfmt.NewReader(r, "bench")
+	var syntaxErrors []*benchfmt.SyntaxError
 	for rd.Scan() {
-		res, ok := rd.Result().(*benchfmt.Result)
-		if !ok {
-			// Syntax errors and file config records are not measurements.
-			continue
+		res := rd.Result()
+		switch res := res.(type) {
+		case *benchfmt.Result:
+			// benchfmt strips the "Benchmark" prefix; restore it so names match
+			// go test -bench output and the names users put in config.benchmarks.
+			name := string(res.Name.Full())
+			if !strings.HasPrefix(name, benchPrefix) {
+				name = benchPrefix + name
+			}
+			for _, v := range res.Values {
+				set.record(name, v.Unit, v.Value)
+			}
+		case *benchfmt.SyntaxError:
+			syntaxErrors = append(syntaxErrors, res)
 		}
-		// benchfmt strips the "Benchmark" prefix; restore it so names match
-		// go test -bench output and the names users put in config.benchmarks.
-		name := string(res.Name.Full())
-		if !strings.HasPrefix(name, benchPrefix) {
-			name = benchPrefix + name
-		}
-		for _, v := range res.Values {
-			set.record(name, v.Unit, v.Value)
-		}
+		// Other result types (config records, etc.) are silently ignored.
+	}
+	if len(syntaxErrors) > 0 {
+		return nil, fmt.Errorf("parse benchmark output: %d syntax errors; first: %v", len(syntaxErrors), syntaxErrors[0])
 	}
 	if err := rd.Err(); err != nil {
 		return nil, fmt.Errorf("parse benchmark output: %w", err)
@@ -111,7 +118,8 @@ func (s *Set) Names() []string {
 	return names
 }
 
-// Values returns the observations for one benchmark and unit.
+// Values returns a copy of the observations for one benchmark and unit.
+// The returned slice is a defensive copy and safe for the caller to mutate or sort.
 func (s *Set) Values(name, unit string) ([]float64, bool) {
 	ser, ok := s.Series[name]
 	if !ok {
@@ -121,7 +129,10 @@ func (s *Set) Values(name, unit string) ([]float64, bool) {
 	if !ok {
 		return nil, false
 	}
-	return m.Values, true
+	// Return a defensive copy to prevent callers from mutating stored observations.
+	out := make([]float64, len(m.Values))
+	copy(out, m.Values)
+	return out, true
 }
 
 // Add appends every observation in other into s, preserving order.
@@ -135,21 +146,26 @@ func (s *Set) Add(other *Set) {
 	}
 }
 
-// SelectByBase returns the subset of s whose base names appear in bases.
-// An empty bases slice selects everything. Base names let a config say
-// "BenchmarkParse" and still match "BenchmarkParse/big-10".
+// SelectByBase returns a new Set containing the subset of s whose base names
+// appear in bases. An empty bases slice selects everything. The returned Set
+// is always independent; base names let a config say "BenchmarkParse" and
+// still match "BenchmarkParse/big-10".
 func (s *Set) SelectByBase(bases []string) *Set {
-	if len(bases) == 0 {
-		return s
-	}
-	want := make(map[string]bool, len(bases))
-	for _, b := range bases {
-		want[b] = true
-	}
 	out := NewSet()
+	var filter func(*Series) bool
+	if len(bases) == 0 {
+		// Empty bases selects all
+		filter = func(*Series) bool { return true }
+	} else {
+		want := make(map[string]bool, len(bases))
+		for _, b := range bases {
+			want[b] = true
+		}
+		filter = func(ser *Series) bool { return want[ser.Base] }
+	}
 	for _, name := range s.Names() {
 		ser := s.Series[name]
-		if !want[ser.Base] {
+		if !filter(ser) {
 			continue
 		}
 		for unit, m := range ser.Metrics {
