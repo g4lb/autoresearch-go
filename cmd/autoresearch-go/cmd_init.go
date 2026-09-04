@@ -203,6 +203,7 @@ func printInitSummary(benchmarks []string, configPath, programPath string) {
 	fmt.Printf("  %s\n", configPath)
 	fmt.Printf("  %s\n", programPath)
 	fmt.Println("\nnext:")
+	fmt.Println("  git add -A && git commit -m \"autoresearch-go init\"")
 	fmt.Println("  autoresearch-go doctor")
 	fmt.Printf("  autoresearch-go baseline -tag %s\n", defaultTag())
 }

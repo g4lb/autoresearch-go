@@ -30,6 +30,7 @@ func runBaseline(args []string) int {
 	fs.SetOutput(os.Stderr)
 	dir := fs.String("C", ".", "repository root (or a directory inside it)")
 	tag := fs.String("tag", defaultTag(), "run identifier, e.g. sep4")
+	force := fs.Bool("force", false, "discard an existing results.tsv that already holds experiment rows")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -88,6 +89,23 @@ func runBaseline(args []string) int {
 	if exists {
 		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: branch %s already exists; the branch must be "+
 			"fresh — a reused tag would compare against the wrong commit. Pick a different -tag.\n", branch)
+		return exitUsage
+	}
+
+	// results.tsv is the sole, durable record of a previous unattended run.
+	// A fresh baseline must not silently truncate it: check — and refuse,
+	// absent -force — before anything else is created or mutated, so a
+	// refusal here leaves no half-made branch, freeze, or worktree behind.
+	resultsPath := filepath.Join(root, results.Path)
+	existingRows, err := results.Load(resultsPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %s: %v\n", resultsPath, err)
+		return exitUsage
+	}
+	if len(existingRows) > 0 && !*force {
+		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %s already holds %d experiment row(s) from a "+
+			"previous run; a fresh baseline would erase that record with no way to get it back.\n", resultsPath, len(existingRows))
+		fmt.Fprintln(os.Stderr, "Move or delete it if you no longer need it, or re-run with -force to discard it.")
 		return exitUsage
 	}
 
@@ -150,8 +168,10 @@ func runBaseline(args []string) int {
 	}
 
 	// Start this run's log fresh: a baseline is a new fixed reference point,
-	// so rows measured against a previous baseline no longer apply.
-	if err := os.WriteFile(filepath.Join(root, results.Path), []byte(results.Header+"\n"), 0o644); err != nil {
+	// so rows measured against a previous baseline no longer apply. The
+	// guard above already established this is safe: resultsPath is either
+	// missing, header-only, or -force was passed.
+	if err := os.WriteFile(resultsPath, []byte(results.Header+"\n"), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: init %s: %v\n", results.Path, err)
 		return exitUsage
 	}
