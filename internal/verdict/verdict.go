@@ -28,6 +28,7 @@ const (
 	ReasonNoImprovement   Reason = "no_significant_improvement"
 	ReasonGuardRegression Reason = "guard_regression"
 	ReasonScope           Reason = "scope_violation"
+	ReasonConfigChanged   Reason = "config_changed"
 	ReasonNewTestFile     Reason = "new_test_file"
 	ReasonBuild           Reason = "build_failed"
 	ReasonVet             Reason = "vet_failed"

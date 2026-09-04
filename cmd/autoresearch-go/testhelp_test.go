@@ -33,6 +33,29 @@ func captureStderr(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
+// captureStdout redirects os.Stdout for the duration of fn and returns
+// everything written to it. Tests in this package never run in parallel, so
+// swapping the package-level os.Stdout for the duration of one call is safe.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = orig }()
+
+	fn()
+
+	w.Close()
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
 // gitIsIgnored reports whether path (relative to dir) is excluded by dir's
 // gitignore rules, via `git check-ignore -q`: exit 0 means ignored, exit 1
 // means not ignored, any other outcome fails the test.
