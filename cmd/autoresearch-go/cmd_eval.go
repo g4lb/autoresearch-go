@@ -113,7 +113,7 @@ func runEval(args []string) int {
 		logWriter = logFile
 	}
 
-	res, deltas, err := pipeline.Eval(context.Background(), pipeline.Options{
+	res, meas, err := pipeline.Eval(context.Background(), pipeline.Options{
 		Root:     root,
 		StateDir: stateDir,
 		Cfg:      cfg,
@@ -129,6 +129,14 @@ func runEval(args []string) int {
 		return exitUsage
 	}
 
+	// meas is nil for a gate failure before measurement; treat that the
+	// same as "nothing measured" rather than special-casing it everywhere.
+	var timeDeltas, allocsDeltas []bench.Delta
+	if meas != nil {
+		timeDeltas, allocsDeltas = meas.Time, meas.Allocs
+	}
+	bestName, bestPct := bestDelta(timeDeltas)
+
 	commit, cErr := gitx.HeadCommit(root)
 	if cErr != nil {
 		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", cErr)
@@ -138,10 +146,13 @@ func runEval(args []string) int {
 	if err := results.Append(resultsPath, results.Row{
 		Commit:         commit,
 		Score:          res.Score,
-		BestBenchDelta: bestDelta(deltas),
-		// eval compares sec/op only (see pipeline.Eval); allocs/op is not
-		// part of the score, so there is no allocation delta to log here.
-		AllocsDelta: 0,
+		BestBenchDelta: bestPct,
+		// The allocs/op change for whichever benchmark had the best time
+		// delta — allocations are never scored (see pipeline.Measurements),
+		// this is purely the "why did it get faster" hint for the morning
+		// read. 0 when there is nothing to report (a gate failure, or the
+		// allocs comparison itself was unavailable).
+		AllocsDelta: allocsDeltaFor(allocsDeltas, bestName),
 		Status:      strings.ToLower(string(res.Status)),
 		Description: *desc,
 	}); err != nil {
@@ -150,34 +161,49 @@ func runEval(args []string) int {
 	}
 
 	if *jsonOut {
-		printJSON(res, deltas)
+		printJSON(res, timeDeltas, allocsDeltas)
 	} else {
-		printHuman(res, deltas, cfg)
+		printHuman(res, timeDeltas, allocsDeltas, cfg)
 	}
 	return res.ExitCode()
 }
 
-// bestDelta returns the most negative (best-improving) PctChange among
-// deltas, or 0 when there are none — a gate failure before measurement.
-func bestDelta(deltas []bench.Delta) float64 {
-	best := 0.0
+// bestDelta returns the benchmark name and PctChange of the most negative
+// (best-improving) time delta, or ("", 0) when there are none — a gate
+// failure before measurement. That benchmark is treated as "the primary
+// benchmark" for results.tsv's allocs_delta column.
+func bestDelta(deltas []bench.Delta) (name string, pct float64) {
 	for i, d := range deltas {
-		if i == 0 || d.PctChange < best {
-			best = d.PctChange
+		if i == 0 || d.PctChange < pct {
+			name, pct = d.Name, d.PctChange
 		}
 	}
-	return best
+	return name, pct
+}
+
+// allocsDeltaFor returns the allocs/op PctChange for the named benchmark,
+// or 0 when there is nothing to report — no measurement happened, or the
+// allocs comparison itself was unavailable (see pipeline.Measurements).
+func allocsDeltaFor(allocsDeltas []bench.Delta, name string) float64 {
+	if d, ok := allocsFor(allocsDeltas, name); ok {
+		return d.PctChange
+	}
+	return 0
 }
 
 // jsonReport is what -json prints: the verdict plus every measured delta,
 // as one object and nothing else, so program.md can `grep '"status"'` it.
+// AllocsDeltas is informational only — see pipeline.Measurements — but
+// program.md's idea bank points an agent at allocation counts as its main
+// lead for what to try next, so it travels alongside the scored deltas.
 type jsonReport struct {
 	verdict.Result
-	Deltas []bench.Delta `json:"deltas"`
+	Deltas       []bench.Delta `json:"deltas"`
+	AllocsDeltas []bench.Delta `json:"allocs_deltas"`
 }
 
-func printJSON(res verdict.Result, deltas []bench.Delta) {
-	b, err := json.MarshalIndent(jsonReport{Result: res, Deltas: deltas}, "", "  ")
+func printJSON(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta) {
+	b, err := json.MarshalIndent(jsonReport{Result: res, Deltas: timeDeltas, AllocsDeltas: allocsDeltas}, "", "  ")
 	if err != nil {
 		// jsonReport is plain structs, strings, floats and slices of the
 		// same — it cannot fail to marshal. Fall back defensively anyway,
@@ -212,8 +238,9 @@ func gateStages(cfg config.Config) []gateStage {
 
 // printHuman writes the result in the shape a human (or an agent reading
 // run.log) skims for a one-line answer: which gate failed, or the
-// per-benchmark deltas and the final score, ending with the verdict.
-func printHuman(res verdict.Result, deltas []bench.Delta, cfg config.Config) {
+// per-benchmark deltas (time, and allocs/op as a hint) and the final
+// score, ending with the verdict.
+func printHuman(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta, cfg config.Config) {
 	stages := gateStages(cfg)
 	failedAt := -1
 	for i, s := range stages {
@@ -251,7 +278,7 @@ func printHuman(res verdict.Result, deltas []bench.Delta, cfg config.Config) {
 	}
 	fmt.Printf("bench x%d vs baseline x%d\n\n", cfg.Count, cfg.Count)
 
-	sorted := append([]bench.Delta(nil), deltas...)
+	sorted := append([]bench.Delta(nil), timeDeltas...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
 	worst := 0.0
 	for _, d := range sorted {
@@ -260,6 +287,13 @@ func printHuman(res verdict.Result, deltas []bench.Delta, cfg config.Config) {
 			note = "  (not significant)"
 		}
 		fmt.Printf("%-24s %+6.1f%%  [p=%.3f n=%d]%s\n", d.Name, d.PctChange, d.P, d.NCand, note)
+		// allocs/op is never scored (see pipeline.Measurements) — it is
+		// printed purely as the "why did this get faster" hint program.md's
+		// idea bank tells an agent to look for. Absent when the allocs
+		// comparison itself was unavailable for this benchmark.
+		if a, ok := allocsFor(allocsDeltas, d.Name); ok {
+			fmt.Printf("  allocs/op             %+6.1f%%  (%.0f -> %.0f)\n", a.PctChange, a.BaseCenter, a.CandCenter)
+		}
 		if d.PctChange > worst {
 			worst = d.PctChange
 		}
@@ -272,4 +306,14 @@ func printHuman(res verdict.Result, deltas []bench.Delta, cfg config.Config) {
 	fmt.Printf("\nSCORE  %.3f  (%+.1f%%)   guard: max regress %+.1f%% < %.1f%% %s\n",
 		res.Score, (res.Score-1)*100, worst, cfg.MaxRegressPct, guard)
 	fmt.Printf("\nVERDICT: %s\n", res.Status)
+}
+
+// allocsFor finds the allocs/op delta for the named benchmark.
+func allocsFor(allocsDeltas []bench.Delta, name string) (bench.Delta, bool) {
+	for _, d := range allocsDeltas {
+		if d.Name == name {
+			return d, true
+		}
+	}
+	return bench.Delta{}, false
 }

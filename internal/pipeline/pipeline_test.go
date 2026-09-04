@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/g4lb/autoresearch-go/internal/bench"
 	"github.com/g4lb/autoresearch-go/internal/config"
 	"github.com/g4lb/autoresearch-go/internal/discover"
 	"github.com/g4lb/autoresearch-go/internal/freeze"
@@ -430,5 +431,50 @@ func TestEvalRejectsOutOfScopeEdit(t *testing.T) {
 	}
 	if res.Status != verdict.StatusFail || res.Reason != verdict.ReasonScope {
 		t.Fatalf("status = %s/%s, want FAIL/scope_violation\nlog:\n%s", res.Status, res.Reason, env.Log)
+	}
+}
+
+func TestEvalReportsAllocsAsHintNeverScored(t *testing.T) {
+	if testing.Short() {
+		t.Skip("measures real benchmarks; skipped in -short")
+	}
+	env := setupRun(t)
+	// writeOptimizedWordCount drops the per-rune string concatenation that
+	// made the original quadratic, which removes the bulk of its
+	// allocations along with most of its time — exactly the combination
+	// program.md's idea bank expects an agent to look for.
+	writeOptimizedWordCount(t, env.Root)
+	commit(t, env.Root, "use strings.Builder")
+
+	res, meas, err := Eval(context.Background(), env.Options())
+	if err != nil {
+		t.Fatalf("Eval: %v", err)
+	}
+	if res.Status != verdict.StatusKeep {
+		t.Fatalf("status = %s (%s), want KEEP\nlog:\n%s", res.Status, res.Message, env.Log)
+	}
+	if meas == nil {
+		t.Fatal("Measurements = nil, want a populated result for a passing candidate")
+	}
+	if len(meas.Allocs) == 0 {
+		t.Fatal("Allocs deltas empty, want the allocs/op comparison to have run")
+	}
+	for _, a := range meas.Allocs {
+		if a.PctChange >= 0 {
+			t.Errorf("%s allocs/op PctChange = %+.1f%%, want negative (fewer allocations)", a.Name, a.PctChange)
+		}
+	}
+
+	// The verdict's score must come from Time alone. Recomputing the
+	// geomean from meas.Time in isolation must reproduce res.Score exactly
+	// — if Allocs ever leaked into scoring, this would drift even though
+	// Allocs happens to point the same direction as Time here.
+	wantScore, err := bench.GeoMean(meas.Time)
+	if err != nil {
+		t.Fatalf("GeoMean(meas.Time): %v", err)
+	}
+	if res.Score != wantScore {
+		t.Errorf("res.Score = %v, want %v (geomean of Time deltas alone) — allocs must never feed the score",
+			res.Score, wantScore)
 	}
 }

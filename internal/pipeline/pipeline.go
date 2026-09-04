@@ -55,11 +55,30 @@ type Options struct {
 	Log io.Writer
 }
 
+// Measurements carries every unit compared for one experiment.
+//
+// Time is the scored metric: it is the only field verdict.Decide ever
+// sees, and the only one that can trip the regression guard. Allocs is
+// reported purely as a hint — program.md's idea bank points an agent at
+// allocation counts as the most common lead for what to try next, and a
+// human reading results.tsv leans on it to see WHY something got faster —
+// but it never feeds the verdict. Keep that boundary: a future change that
+// starts scoring Allocs would silently let allocation-only changes with no
+// real latency improvement pass as KEEP.
+type Measurements struct {
+	// Time is the sec/op delta per benchmark. This is what Decide scores.
+	Time []bench.Delta
+	// Allocs is the allocs/op delta per benchmark, informational only. It
+	// is nil when the comparison itself failed (see Eval) — a missing hint
+	// is never a reason to discard an otherwise-valid experiment.
+	Allocs []bench.Delta
+}
+
 // Eval runs one experiment: gate correctness, measure, score. It returns a
 // terminal verdict.Result for every gate outcome and for every completed
 // measurement; a non-nil error means the harness itself malfunctioned
 // (I/O, git, a malformed baseline), not that the candidate was rejected.
-func Eval(ctx context.Context, o Options) (verdict.Result, []bench.Delta, error) {
+func Eval(ctx context.Context, o Options) (verdict.Result, *Measurements, error) {
 	timeout, err := o.Cfg.TimeoutDuration()
 	if err != nil {
 		return verdict.Result{}, nil, err
@@ -191,20 +210,36 @@ func Eval(ctx context.Context, o Options) (verdict.Result, []bench.Delta, error)
 		return verdict.Gate(verdict.StatusCrash, verdict.ReasonBuild, err.Error()), nil, nil
 	}
 
-	// 7. Score.
-	deltas, err := bench.CompareAll(baseSet, candSet, bench.UnitTime)
+	// 7. Score. Time is the scored metric: any failure here (including a
+	// benchmark that vanished from the candidate) fails the whole call, per
+	// bench.CompareAll's contract.
+	timeDeltas, err := bench.CompareAll(baseSet, candSet, bench.UnitTime)
 	if err != nil {
 		return verdict.Result{}, nil, err
 	}
-	score, err := bench.GeoMean(deltas)
+	score, err := bench.GeoMean(timeDeltas)
 	if err != nil {
 		return verdict.Result{}, nil, err
 	}
+
+	// Allocs is informational only (see Measurements). CompareAll is strict
+	// about a benchmark disappearing from one side, which is right for the
+	// scored metric but wrong here: a benchmark that legitimately makes zero
+	// allocations on one side, or any other allocs-specific mismatch, must
+	// not fail a real, correctly-measured experiment over a missing hint.
+	allocsDeltas, err := bench.CompareAll(baseSet, candSet, bench.UnitAllocs)
+	if err != nil {
+		allocsDeltas = nil
+		if o.Log != nil {
+			fmt.Fprintf(o.Log, "allocs/op comparison unavailable, continuing without it: %v\n", err)
+		}
+	}
+
 	return verdict.Decide(verdict.Input{
-		Deltas:        deltas,
+		Deltas:        timeDeltas,
 		Score:         score,
 		MaxRegressPct: o.Cfg.MaxRegressPct,
-	}), deltas, nil
+	}), &Measurements{Time: timeDeltas, Allocs: allocsDeltas}, nil
 }
 
 // benchEnv returns the environment for benchmark subprocesses: the

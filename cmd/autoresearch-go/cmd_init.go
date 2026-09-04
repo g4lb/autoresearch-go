@@ -155,7 +155,12 @@ func renderConfig(cfg config.Config) []byte {
 	b.WriteString("\n")
 
 	b.WriteString("# Count is the number of interleaved A/B measurement rounds per side.\n")
-	b.WriteString("# Higher counts are slower to run but more resistant to noise.\n")
+	b.WriteString("# Higher counts are slower to run but more resistant to noise. 4 is the hard\n")
+	b.WriteString("# floor: below it the significance test can never report p < 0.05, so every\n")
+	b.WriteString("# experiment would be discarded no matter how large the real improvement is.\n")
+	b.WriteString("# Below about 8, significance gets hard to reach on a noisy machine even for a\n")
+	b.WriteString("# genuine win. The default of 10 leaves real margin; lower it for speed only if\n")
+	b.WriteString("# you accept more experiments coming back DISCARD on noise alone.\n")
 	fmt.Fprintf(&b, "count: %d\n\n", cfg.Count)
 
 	b.WriteString("# Benchtime is passed to `go test -benchtime` for each round.\n")

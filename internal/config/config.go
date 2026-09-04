@@ -64,10 +64,22 @@ func Load(path string) (Config, error) {
 	return c, nil
 }
 
+// minCount is the smallest Count at which the significance test used by
+// internal/bench (an exact Mann-Whitney rank-sum test) can ever report
+// p < 0.05, no matter how large or how clean the improvement is. At n=2 or
+// n=3 measured rounds per side, the best achievable two-sided p-value is
+// 0.3333 and 0.1 respectively — both above the default alpha of 0.05 — so
+// verdict.Decide would discard every single experiment, KEEP or not, with
+// nothing in the output explaining why. See internal/pipeline's eval tests
+// for how this was found.
+const minCount = 4
+
 // Validate reports whether the configuration is usable.
 func (c Config) Validate() error {
-	if c.Count < 2 {
-		return errors.New("count must be at least 2 for a meaningful comparison")
+	if c.Count < minCount {
+		return fmt.Errorf("count must be at least %d: the significance test cannot report p < 0.05 "+
+			"with fewer than %d measured rounds per side no matter how large the improvement is, so "+
+			"every experiment would be discarded regardless of what changed (the default is 10)", minCount, minCount)
 	}
 	if c.MaxRegressPct < 0 {
 		return errors.New("max_regress_pct must not be negative")
