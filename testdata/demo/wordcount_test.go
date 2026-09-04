@@ -28,6 +28,17 @@ func TestCountWordsPunctuation(t *testing.T) {
 	}
 }
 
+func TestCountWordsDigits(t *testing.T) {
+	// Digits are part of CountWords' contract and appear in benchInput, so a
+	// change that drops them would be FASTER and would otherwise pass every
+	// test here — the exact wrong-but-fast result the harness must catch.
+	got := CountWords("abc 123 test456 over 2 lazy")
+	want := map[string]int{"abc": 1, "123": 1, "test456": 1, "over": 1, "2": 1, "lazy": 1}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("CountWords = %v, want %v", got, want)
+	}
+}
+
 var benchInput = strings.Repeat("The Quick, Brown Fox! jumps over 2 lazy dogs. ", 200)
 
 func BenchmarkCountWords(b *testing.B) {
