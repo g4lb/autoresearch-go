@@ -241,7 +241,7 @@ Stated plainly, because performance tools that oversell are worse than useless:
   `-count` mitigate it and `doctor` warns you, but a quiet Linux box gives cleaner
   results.
 - **No benchmarks, no value.** This optimizes what it can measure. `init` tells you
-  plainly rather than pretending.
+  plainly rather than pretending — see [Repos with no benchmarks](#repos-with-no-benchmarks).
 - **A small measurement asymmetry remains.** Each round measures the baseline a
   moment before the candidate, so on a machine that is steadily warming up, the
   candidate is consistently sampled a fraction hotter. Interleaving cancels the
@@ -255,6 +255,42 @@ Stated plainly, because performance tools that oversell are worse than useless:
   0.05 threshold no matter how large or how clean the real improvement is. Every
   experiment would be discarded on a technicality, not on its merits. `config.yaml`
   refuses `count` below 4 rather than let that happen silently.
+
+### Repos with no benchmarks
+
+`autoresearch-go init` discovers benchmarks by scanning the repository for Go test
+files and looking for functions matching `func BenchmarkXxx(b *testing.B)`. If it
+finds none, it refuses to write `.autoresearch/config.yaml` and exits with an error,
+rather than generating a config with an empty `benchmarks:` list that would silently
+optimize nothing.
+
+That refusal is deliberate: `autoresearch-go` has no other notion of "faster." The
+verdict — `KEEP`, `DISCARD`, `FAIL`, `CRASH` — is entirely a function of the declared
+benchmarks' timings across a baseline and a candidate. No benchmarks means no signal
+to gate on, at which point every candidate would either be rejected for no reason or
+accepted for no reason.
+
+To use `autoresearch-go` on a repository like this:
+
+1. Write at least one benchmark that covers the code you actually want made faster —
+   a plain Go benchmark, in a `_test.go` file, of the form:
+
+   ```go
+   func BenchmarkThing(b *testing.B) {
+       for i := 0; i < b.N; i++ {
+           Thing()
+       }
+   }
+   ```
+
+2. Benchmark the right thing. A benchmark that exercises a cold path, a trivial
+   helper, or a function nobody calls under load produces numbers that are entirely
+   real and entirely useless — confident percentages attached to work that was never
+   the bottleneck. Benchmark the function, loop, or request path that actually
+   dominates the workload you care about, ideally informed by a profile of the real
+   program rather than a guess.
+3. Re-run `autoresearch-go init` once the benchmark exists. It will pick it up and
+   proceed normally.
 
 ## License
 

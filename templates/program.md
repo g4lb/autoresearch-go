@@ -41,7 +41,8 @@ What you MUST NOT do:
 - Edit any `_test.go` file. It is restored from the frozen baseline copy
   before every `eval`, so an edit there is silently discarded — worse, it
   wastes an experiment slot for nothing. If a test looks wrong, say so in
-  `results.tsv` and move on; do not try to route around it.
+  your `-desc` for that experiment and move on; do not try to route around
+  it.
 - Edit `go.mod` or `go.sum`, ever. These are rejected outright regardless of
   what `scope` says. Changing a dependency is a supply-chain decision a
   human makes, not something an unattended loop decides, and a swapped
@@ -55,7 +56,7 @@ What you MUST NOT do:
   gate itself rejects, failing the experiment before it is even measured.
 - Try to weaken, disable, or reinterpret the verdict. `eval`'s exit code and
   `--json` output are the only truth. If a result looks wrong, say so in
-  `results.tsv`; do not try to make the harness agree with you by other
+  your `-desc`; do not try to make the harness agree with you by other
   means.
 - Batch multiple unrelated changes into one experiment. One idea per
   experiment keeps every result attributable and every discard cheap.
@@ -101,26 +102,35 @@ guard and by how much.
 
 ## Logging
 
-Append one row to `results.tsv` after every experiment, KEEP or not. Create
-it with a header row if it does not already exist:
+`results.tsv` is HARNESS-OWNED. `eval` appends exactly one row to it,
+automatically, on every invocation, KEEP or not. You must never create,
+append to, or edit `results.tsv` yourself — any manual write is either
+redundant (the row already exists) or corrupts a file the harness parses
+strictly, which fails the human's morning `autoresearch-go report`, or a
+future `autoresearch-go baseline -force`, on the whole file, not just your
+line.
+
+The columns the human sees are:
 
 ```
-timestamp	commit	status	score	idea	note
+commit	score	best_bench_delta	allocs_delta	status	description
 ```
 
-- `timestamp` — RFC 3339, when the experiment finished.
-- `commit` — the short hash of the commit you just evaluated (before any
-  `git reset --hard` on a non-KEEP).
-- `status` — `KEEP`, `DISCARD`, `FAIL`, or `CRASH`, copied from the verdict.
-- `score` — the score from the verdict JSON, or blank if the gate failed
-  before scoring.
-- `idea` — a short slug for what you tried, e.g. `preallocate-map`.
-- `note` — one sentence: what you expected, what happened, what you'd try
-  next if this comes up again.
+`commit`, `score`, `best_bench_delta`, `allocs_delta`, and `status` are
+filled in by the harness from the verdict — you do not control them. The one
+column that is yours is `description`, and you set it by passing `-desc` to
+`eval`:
 
-This file is the human's morning read. Keep rows terse — one line each — and
-never delete a row, including for discards. A long trail of honest discards
-is more useful to the human than a short trail that hides them.
+```
+autoresearch-go eval --json -desc "preallocate the map"
+```
+
+Always pass `-desc`, on every invocation, KEEP or not — it is the only
+record of what you were trying. Keep it terse — a short slug, e.g.
+`preallocate-map` — and never dishonest: describe what you actually tried,
+including for a DISCARD, FAIL, or CRASH. This file is the human's morning
+read. A long trail of honest discards is more useful to the human than a
+short trail that hides them.
 
 ## Go optimization idea bank
 
@@ -163,14 +173,15 @@ LOOP FOREVER:
 2. If you have no strong hypothesis, run `autoresearch-go profile` and read the hot spots.
 3. Change ONE thing in the in-scope Go source. One idea per experiment.
 4. `git add -A && git commit -m "<idea>"`
-5. `autoresearch-go eval --json` (no redirect — do NOT tee or send stdout
-   to `run.log`; either floods your context or clobbers the transcript, see above)
+5. `autoresearch-go eval --json -desc "<idea>"` (no redirect — do NOT tee or
+   send stdout to `run.log`; either floods your context or clobbers the
+   transcript, see above). `-desc` is what lands in `results.tsv`'s
+   `description` column for this experiment — always pass it.
 6. Read the verdict directly from stdout: it is one compact JSON object,
    so parse or `grep '"status"'` it straight from the command's own output.
 7. KEEP  -> leave the commit in place, the branch advances.
    Anything else -> `git reset --hard HEAD~1`
-8. Append a row to `results.tsv` describing what you tried and what happened.
-9. Go to 1.
+8. Go to 1.
 
 **NEVER STOP**: Do not pause to ask whether to continue. The human may be
 asleep. You are autonomous. If you run out of ideas, re-read the profile

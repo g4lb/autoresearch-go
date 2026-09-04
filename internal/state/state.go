@@ -52,13 +52,13 @@ func StateDir(repoRoot, tag string) (string, error) {
 }
 
 // Paths within a run's StateDir.
+//
+// The frozen golden copies and their manifest also live under StateDir, but
+// their path constants (StoreDir, ManifestPath) belong to internal/freeze,
+// which owns that layout — they are not duplicated here.
 const (
 	// BaselineFile is the baseline record, relative to StateDir.
 	BaselineFile = "baseline.json"
-	// FrozenDir holds the frozen golden copies of test files, relative to StateDir.
-	FrozenDir = "frozen"
-	// ManifestFile is the frozen-file manifest, relative to StateDir.
-	ManifestFile = "frozen/manifest.json"
 	// WorktreeName is the pinned baseline worktree directory, relative to StateDir.
 	WorktreeName = "baseline-worktree"
 )
