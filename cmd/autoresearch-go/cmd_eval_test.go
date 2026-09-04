@@ -260,3 +260,149 @@ func CountWords(s string) map[string]int {
 		}
 	}
 }
+
+func TestEvalWritesOneCoherentStreamWhenStdoutAliasesRunLog(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs a real build/vet/test/bench cycle; skipped in -short")
+	}
+	dir := copyDemoRepo(t)
+	mustInit(t, dir)
+
+	// Shrink count/benchtime for speed; must stay >= config's significance
+	// floor (4).
+	configPath := filepath.Join(dir, config.Path)
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Count = 5
+	cfg.Benchtime = "50ms"
+	if err := os.WriteFile(configPath, renderConfig(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-q", "-m", "shrink count/benchtime for a fast test")
+
+	if code := runBaseline([]string{"-C", dir, "-tag", "sep4"}); code != exitOK {
+		t.Fatalf("runBaseline = %d, want %d", code, exitOK)
+	}
+
+	// No source change: this only needs a valid eval run, not any
+	// particular verdict. Committing an empty change is enough to give
+	// eval something to check out and measure.
+	runGit(t, dir, "commit", "-q", "--allow-empty", "-m", "no-op change")
+
+	// Simulate a caller (e.g. a stale program.md, or a human's shell) that
+	// pointed the process's own stdout at exactly the path eval computes
+	// for run.log — the mistake FIX 1/FIX 2 exist to survive. This must be
+	// a real file at that exact path, not a pipe: os.SameFile compares
+	// device+inode, and the whole point is that eval's own run.log open
+	// and the process's stdout now refer to the identical file.
+	logPath := filepath.Join(dir, "run.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	origStdout := os.Stdout
+	os.Stdout = f
+	var code int
+	func() {
+		defer func() { os.Stdout = origStdout }()
+		code = runEval([]string{"-C", dir})
+	}()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if code != exitOK && code != exitDiscard {
+		t.Fatalf("runEval = %d, want %d (KEEP) or %d (DISCARD) for a no-op change", code, exitOK, exitDiscard)
+	}
+
+	got, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(got)
+
+	// A marker unique to the real subprocess transcript, not the coincidence
+	// that the human verdict summary also prints a "go build ./..." stage
+	// line: runner.Go logs every command exactly as
+	// "\n$ go <args>\n(dir=...", which the verdict summary never contains
+	// (its stage line reads "go build ./...             ok", with no
+	// leading "$" and no following "(dir=").
+	const transcriptMarker = "\n$ go build ./...\n(dir="
+	if !strings.Contains(content, transcriptMarker) {
+		t.Errorf("run.log lacks the build transcript (no %q); got:\n%s", transcriptMarker, content)
+	}
+	if !strings.Contains(content, "VERDICT:") {
+		t.Errorf("run.log = %q, want the final verdict line intact", content)
+	}
+	// Neither must have clobbered the other: the transcript is written
+	// during pipeline.Eval, the verdict only after it returns, so an intact
+	// file has the transcript appearing strictly before the verdict, and
+	// the file as a whole must still be transcript-sized, not shrunk down
+	// to roughly just the small verdict block a clobber would leave behind.
+	if ti, vi := strings.Index(content, transcriptMarker), strings.Index(content, "VERDICT:"); ti < 0 || vi < 0 || ti > vi {
+		t.Errorf("run.log = %q, want the transcript before the verdict, not overwritten by it", content)
+	}
+	const minIntactSize = 2000 // the real transcript runs several KB; a clobber truncates it to near nothing
+	if len(content) < minIntactSize {
+		t.Errorf("run.log is %d bytes, want at least %d: looks truncated/clobbered\n%s", len(content), minIntactSize, content)
+	}
+}
+
+func TestEvalMissingConfigSuggestsInit(t *testing.T) {
+	dir := copyDemoRepo(t)
+	// Simulate a run branch that exists without ever having gone through
+	// init/baseline (e.g. hand-created, or state corruption) — no
+	// .autoresearch/config.yaml at all.
+	runGit(t, dir, "checkout", "-q", "-b", "autoresearch-go/sep4")
+
+	var code int
+	stderr := captureStderr(t, func() {
+		code = runEval([]string{"-C", dir, "-no-log"})
+	})
+	if code != exitUsage {
+		t.Fatalf("runEval with no config = %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(stderr, "autoresearch-go init") {
+		t.Errorf("stderr = %q, want it to suggest `autoresearch-go init` for a genuinely absent config", stderr)
+	}
+}
+
+func TestEvalInvalidConfigDoesNotSuggestInit(t *testing.T) {
+	// init refuses to overwrite an existing config.yaml without -force, so
+	// telling an agent to run init when a config already exists (just an
+	// invalid one) hands it a second dead-end error. It must instead be
+	// told to correct the file in place.
+	dir := copyDemoRepo(t)
+	mustInit(t, dir)
+	runGit(t, dir, "checkout", "-q", "-b", "autoresearch-go/sep4")
+
+	configPath := filepath.Join(dir, config.Path)
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Count = 2 // below the significance floor: invalid, but the file exists
+	if err := os.WriteFile(configPath, renderConfig(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var code int
+	stderr := captureStderr(t, func() {
+		code = runEval([]string{"-C", dir, "-no-log"})
+	})
+	if code != exitUsage {
+		t.Fatalf("runEval with an invalid config = %d, want %d", code, exitUsage)
+	}
+	if strings.Contains(stderr, "autoresearch-go init") {
+		t.Errorf("stderr = %q, want no dead-end suggestion to run init (it would refuse without -force)", stderr)
+	}
+	if !strings.Contains(stderr, "count must be at least") {
+		t.Errorf("stderr = %q, want the underlying validation error naming the bad field", stderr)
+	}
+	if !strings.Contains(stderr, "correct") {
+		t.Errorf("stderr = %q, want guidance to correct the config in place", stderr)
+	}
+}

@@ -144,14 +144,29 @@ Measure first, then reach for these:
 
 ## The experiment loop
 
+`eval` already splits its own output for you: the verdict — one compact
+JSON object — is written to stdout, and the full, noisy build/vet/test/
+benchmark transcript is written automatically to `run.log` in the
+repository root. `run.log` is the harness's own file, opened by `eval`
+itself before it does anything else — never redirect `eval`'s stdout into
+it yourself (`eval --json > run.log 2>&1` or similar). Doing so opens a
+second, independent descriptor on a path the harness already has open for
+the transcript; if the two ever fall out of step, whichever one writes
+second overwrites the other from byte 0, destroying exactly the
+diagnostic transcript you need when a step FAILs or CRASHes and you want
+to see why. Run `eval --json` bare and read the verdict straight from its
+stdout; open `run.log` only to read it, never to write to it.
+
 LOOP FOREVER:
 
 1. Check git state: confirm you are on the run branch.
 2. If you have no strong hypothesis, run `autoresearch-go profile` and read the hot spots.
 3. Change ONE thing in the in-scope Go source. One idea per experiment.
 4. `git add -A && git commit -m "<idea>"`
-5. `autoresearch-go eval --json > run.log 2>&1` (redirect everything; do NOT tee, it floods your context)
-6. Read the verdict: `grep '"status"' run.log`
+5. `autoresearch-go eval --json` (no redirect — do NOT tee or send stdout
+   to `run.log`; either floods your context or clobbers the transcript, see above)
+6. Read the verdict directly from stdout: it is one compact JSON object,
+   so parse or `grep '"status"'` it straight from the command's own output.
 7. KEEP  -> leave the commit in place, the branch advances.
    Anything else -> `git reset --hard HEAD~1`
 8. Append a row to `results.tsv` describing what you tried and what happened.

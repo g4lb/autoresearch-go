@@ -160,10 +160,30 @@ func (e *evalEnv) Options() Options {
 // runInit/runBaseline live in package main and cannot be imported here.
 func setupRun(t *testing.T) *evalEnv {
 	t.Helper()
+	return setupRunWithBenchmarks(t, []string{"BenchmarkCountWords"}, nil)
+}
+
+// setupRunWithBenchmarks is setupRun generalized to declare a specific
+// benchmark set and, optionally, write extra files (relative path ->
+// content) into the fixture before it is committed and frozen. Used by
+// TestEvalToleratesFailedAllocsComparison, which needs a benchmark that
+// makes zero allocations rather than the fixture's default one.
+func setupRunWithBenchmarks(t *testing.T, benchmarks []string, extraFiles map[string]string) *evalEnv {
+	t.Helper()
 	root := copyDemoRepo(t)
 
+	for rel, content := range extraFiles {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	cfg := config.Default()
-	cfg.Benchmarks = []string{"BenchmarkCountWords"}
+	cfg.Benchmarks = benchmarks
 	// Short benchtime and few rounds keep the measuring scenarios well
 	// under a minute. Count must be at least 4: benchmath's Mann-Whitney
 	// test on n=3 vs n=3 samples cannot report p < 0.05 no matter how
@@ -476,5 +496,76 @@ func TestEvalReportsAllocsAsHintNeverScored(t *testing.T) {
 	if res.Score != wantScore {
 		t.Errorf("res.Score = %v, want %v (geomean of Time deltas alone) — allocs must never feed the score",
 			res.Score, wantScore)
+	}
+}
+
+// TestEvalToleratesFailedAllocsComparison exercises Eval's handling of a
+// failed allocs/op comparison directly, per the fix round's requirement: a
+// missing hint must never turn into a discarded experiment. BenchmarkNoAlloc
+// makes zero allocations on both baseline and candidate by construction, so
+// every measured allocs/op value is exactly 0. That trips
+// bench.Compare's "baseline median is zero, cannot form a ratio" guard,
+// which is the cleanest deterministic way to force the comparison to fail
+// without needing to fake or intercept internal/bench itself.
+func TestEvalToleratesFailedAllocsComparison(t *testing.T) {
+	if testing.Short() {
+		t.Skip("measures real benchmarks; skipped in -short")
+	}
+	const noAllocSrc = `package demo
+
+import "testing"
+
+// BenchmarkNoAlloc makes zero allocations by construction: it exists
+// solely to trip bench.Compare's "baseline median is zero" guard for
+// allocs/op, while still taking measurable wall-clock time so the time
+// comparison that actually decides the verdict has real numbers to work
+// with.
+func BenchmarkNoAlloc(b *testing.B) {
+	sum := 0
+	for i := 0; i < b.N; i++ {
+		sum += i
+	}
+	if sum < 0 {
+		b.Fatal("impossible")
+	}
+}
+`
+	env := setupRunWithBenchmarks(t, []string{"BenchmarkNoAlloc"}, map[string]string{
+		"noalloc_test.go": noAllocSrc,
+	})
+	// No source change needed at all: setupRunWithBenchmarks already
+	// committed and pinned the baseline at a tree containing BenchmarkNoAlloc,
+	// so Eval can run directly against it — the point here is only to reach
+	// measurement with a benchmark whose allocs/op is always 0.
+	res, meas, err := Eval(context.Background(), env.Options())
+	if err != nil {
+		t.Fatalf("Eval: %v", err)
+	}
+
+	// The gate chain and measurement must have completed normally — a
+	// missing allocs/op hint is not a reason to fail or crash the
+	// experiment. res.Reason must be one of the three post-measurement
+	// reasons, not any gate-failure reason.
+	switch res.Reason {
+	case verdict.ReasonImproved, verdict.ReasonNoImprovement, verdict.ReasonGuardRegression:
+		// expected: a normal, scored outcome.
+	default:
+		t.Fatalf("status/reason = %s/%s, want a normal scored outcome (improved, "+
+			"no_significant_improvement, or guard_regression), not a gate failure\nlog:\n%s",
+			res.Status, res.Reason, env.Log)
+	}
+
+	if meas == nil {
+		t.Fatal("Measurements = nil, want a populated result for a passing candidate")
+	}
+	if meas.Allocs != nil {
+		t.Errorf("Measurements.Allocs = %+v, want nil: the comparison should have failed and been "+
+			"swallowed, not silently produced (possibly bogus) deltas", meas.Allocs)
+	}
+	if len(meas.Time) == 0 {
+		t.Error("Measurements.Time is empty, want the time comparison (which does not fail here) to have run")
+	}
+	if !strings.Contains(env.Log.String(), "allocs/op comparison unavailable") {
+		t.Errorf("log = %q, want a note that the allocs/op comparison was skipped", env.Log.String())
 	}
 }

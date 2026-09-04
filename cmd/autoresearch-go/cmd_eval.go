@@ -68,10 +68,24 @@ func runEval(args []string) int {
 		return exitUsage
 	}
 
-	cfg, err := config.Load(filepath.Join(root, config.Path))
+	configPath := filepath.Join(root, config.Path)
+	// Distinguish "no config yet" from "a config exists but is invalid":
+	// init refuses to overwrite an existing config.yaml without -force, so
+	// telling an agent to run init when one is already there just hands it
+	// a second error and no path forward. Only a genuinely absent config
+	// should point at init; an existing-but-invalid one (including a
+	// count below the significance floor, now that Validate enforces it)
+	// needs the human to fix the named field in place.
+	if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
+		fmt.Fprintf(os.Stderr, "autoresearch-go eval: no config at %s\n", configPath)
+		fmt.Fprintln(os.Stderr, "run `autoresearch-go init` first.")
+		return exitUsage
+	}
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", err)
-		fmt.Fprintln(os.Stderr, "run `autoresearch-go init` first.")
+		fmt.Fprintf(os.Stderr, "%s exists but is invalid; correct the named field and try again "+
+			"(init will refuse to regenerate it without -force).\n", configPath)
 		return exitUsage
 	}
 
@@ -104,13 +118,35 @@ func runEval(args []string) int {
 		logWriter = os.Stdout
 	} else {
 		logPath := filepath.Join(root, pipeline.RunLogName)
-		logFile, ferr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-		if ferr != nil {
-			fmt.Fprintf(os.Stderr, "autoresearch-go eval: open %s: %v\n", logPath, ferr)
-			return exitUsage
+		// A caller (a stale program.md, a human's shell, a wrapper script)
+		// may have already pointed the process's own stdout at run.log —
+		// exactly the mistake this file exists to prevent. Opening a SECOND
+		// descriptor on that same path would not append to the first: it
+		// would seek to 0 and overwrite from the start, so whichever of the
+		// transcript or the final verdict is written second clobbers the
+		// other. os.SameFile detects that case by comparing the two open
+		// files' underlying identity (device + inode), not their paths, so
+		// it also catches a symlink or a bind mount pointing at run.log. When
+		// they are the same file, write straight to the already-open
+		// os.Stdout instead of opening our own handle, so the transcript and
+		// the verdict land in one coherent stream in the order produced. A
+		// failed Stat (stdout is a pipe, a socket, or already closed) is not
+		// an error here — it just means they cannot be the same file, so
+		// this falls back to opening run.log normally.
+		if stdoutInfo, sErr := os.Stdout.Stat(); sErr == nil {
+			if logInfo, lErr := os.Stat(logPath); lErr == nil && os.SameFile(stdoutInfo, logInfo) {
+				logWriter = os.Stdout
+			}
 		}
-		defer logFile.Close()
-		logWriter = logFile
+		if logWriter == nil {
+			logFile, ferr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+			if ferr != nil {
+				fmt.Fprintf(os.Stderr, "autoresearch-go eval: open %s: %v\n", logPath, ferr)
+				return exitUsage
+			}
+			defer logFile.Close()
+			logWriter = logFile
+		}
 	}
 
 	res, meas, err := pipeline.Eval(context.Background(), pipeline.Options{
