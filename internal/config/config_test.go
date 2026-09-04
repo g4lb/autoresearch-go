@@ -41,6 +41,7 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		{"count below 2", func(c *Config) { c.Count = 1 }},
 		{"negative regress", func(c *Config) { c.MaxRegressPct = -1 }},
 		{"bad benchtime", func(c *Config) { c.Benchtime = "banana" }},
+		{"count-form benchtime", func(c *Config) { c.Benchtime = "100x" }},
 		{"bad timeout", func(c *Config) { c.Timeout = "banana" }},
 		{"empty scope", func(c *Config) { c.Scope = nil }},
 	}
