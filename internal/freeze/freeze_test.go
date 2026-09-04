@@ -112,3 +112,50 @@ func TestManifestRoundTrip(t *testing.T) {
 		t.Errorf("round trip lost the hash")
 	}
 }
+
+func TestVerifyDetectsDeletion(t *testing.T) {
+	// Deleting a test file is the simplest possible attack. Verify must count
+	// it as changed, not skip it as absent.
+	root, _, m := setup(t)
+	os.Remove(filepath.Join(root, "pkg/a_test.go"))
+
+	changed, err := Verify(root, m)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if len(changed) != 1 || changed[0] != "pkg/a_test.go" {
+		t.Errorf("changed = %v, want [pkg/a_test.go] for a deleted file", changed)
+	}
+}
+
+func TestSnapshotPreservesPackagePaths(t *testing.T) {
+	// Two test files sharing a base name in different packages must not
+	// collide inside the store. If the store flattened paths, one would
+	// overwrite the other and Restore would hand back the wrong content.
+	root := t.TempDir()
+	store := filepath.Join(root, StoreDir)
+	writeFile(t, filepath.Join(root, "internal/a/x_test.go"), "package a // A\n")
+	writeFile(t, filepath.Join(root, "internal/b/x_test.go"), "package b // B\n")
+
+	m, err := Snapshot(root, store, []string{"internal/a/x_test.go", "internal/b/x_test.go"})
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if m.Files["internal/a/x_test.go"] == m.Files["internal/b/x_test.go"] {
+		t.Fatal("both files hashed identically; the snapshot collapsed them")
+	}
+
+	// Tamper with both, then restore.
+	writeFile(t, filepath.Join(root, "internal/a/x_test.go"), "package a // TAMPERED\n")
+	writeFile(t, filepath.Join(root, "internal/b/x_test.go"), "package b // TAMPERED\n")
+	if _, err := Restore(root, store, m); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	if got := readFile(t, filepath.Join(root, "internal/a/x_test.go")); got != "package a // A\n" {
+		t.Errorf("internal/a restored to %q, want its own original content", got)
+	}
+	if got := readFile(t, filepath.Join(root, "internal/b/x_test.go")); got != "package b // B\n" {
+		t.Errorf("internal/b restored to %q, want its own original content", got)
+	}
+}
