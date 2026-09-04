@@ -47,9 +47,9 @@ func TestReportComputesCumulativeSpeedupCorrectly(t *testing.T) {
 		}
 	})
 
-	// Verify the cumulative speedup is 0.72 (reported as -28.0%).
-	if !strings.Contains(output, "-28.0%") && !strings.Contains(output, "28.0%") {
-		t.Errorf("output does not contain expected speedup:\n%s", output)
+	// Verify the cumulative speedup is 0.72 (reported as 28.0%).
+	if !strings.Contains(output, "28.0%") {
+		t.Errorf("output does not contain expected speedup 28.0%%:\n%s", output)
 	}
 
 	// Verify that allocs_delta is mentioned.

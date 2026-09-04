@@ -10,6 +10,7 @@ import (
 	"github.com/g4lb/autoresearch-go/internal/config"
 	"github.com/g4lb/autoresearch-go/internal/gitx"
 	"github.com/g4lb/autoresearch-go/internal/profile"
+	"github.com/g4lb/autoresearch-go/internal/state"
 )
 
 // runProfile profiles the declared benchmarks and reports hot spots.
@@ -49,7 +50,7 @@ func runProfile(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	benchPattern := "Benchmark" + benchmarkPattern(cfg.Benchmarks)
+	benchPattern := state.BenchPattern(cfg.Benchmarks)
 	report, err := profile.Capture(ctx, root, benchPattern, cfg.Benchtime, profileDir, timeout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "autoresearch-go profile: %v\n", err)
@@ -67,13 +68,4 @@ func runProfile(args []string) int {
 	fmt.Printf("open with: go tool pprof -http=: .autoresearch/profiles/cpu.out\n")
 
 	return exitOK
-}
-
-// benchmarkPattern constructs a pattern for go test -bench from benchmark names.
-// If names are ["BenchmarkCountWords"], returns ".*", else returns pattern matching all.
-func benchmarkPattern(names []string) string {
-	if len(names) == 0 {
-		return ".*"
-	}
-	return ".*"
 }
