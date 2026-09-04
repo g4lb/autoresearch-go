@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // Locations relative to the repository root.
@@ -28,17 +29,37 @@ func hashBytes(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// safeJoin joins rel onto root, rejecting anything that would escape it.
+// Manifest entries come from a JSON file on disk, so they are untrusted
+// input: Restore writes through them before every evaluation.
+func safeJoin(root, rel string) (string, error) {
+	if filepath.IsAbs(rel) {
+		return "", fmt.Errorf("frozen path %q must be relative", rel)
+	}
+	clean := filepath.Clean(filepath.ToSlash(rel))
+	if clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("frozen path %q escapes the repository root", rel)
+	}
+	return filepath.Join(root, clean), nil
+}
+
 // Snapshot copies each file into storeDir and records its hash.
 // Paths are repo-relative and are preserved inside the store.
 func Snapshot(repoRoot, storeDir string, files []string) (*Manifest, error) {
 	m := &Manifest{Files: map[string]string{}}
 	for _, rel := range files {
-		src := filepath.Join(repoRoot, rel)
+		src, err := safeJoin(repoRoot, rel)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot %s: %w", rel, err)
+		}
 		b, err := os.ReadFile(src)
 		if err != nil {
 			return nil, fmt.Errorf("snapshot %s: %w", rel, err)
 		}
-		dst := filepath.Join(storeDir, rel)
+		dst, err := safeJoin(storeDir, rel)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot %s: %w", rel, err)
+		}
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return nil, fmt.Errorf("snapshot %s: %w", rel, err)
 		}
@@ -55,12 +76,18 @@ func Snapshot(repoRoot, storeDir string, files []string) (*Manifest, error) {
 func Restore(repoRoot, storeDir string, m *Manifest) ([]string, error) {
 	var changed []string
 	for _, rel := range m.sortedPaths() {
-		src := filepath.Join(storeDir, rel)
+		src, err := safeJoin(storeDir, rel)
+		if err != nil {
+			return nil, fmt.Errorf("restore %s: %w", rel, err)
+		}
 		want, err := os.ReadFile(src)
 		if err != nil {
 			return nil, fmt.Errorf("restore %s: %w", rel, err)
 		}
-		dst := filepath.Join(repoRoot, rel)
+		dst, err := safeJoin(repoRoot, rel)
+		if err != nil {
+			return nil, fmt.Errorf("restore %s: %w", rel, err)
+		}
 		if got, err := os.ReadFile(dst); err == nil && hashBytes(got) == hashBytes(want) {
 			continue
 		}
@@ -80,7 +107,11 @@ func Restore(repoRoot, storeDir string, m *Manifest) ([]string, error) {
 func Verify(repoRoot string, m *Manifest) ([]string, error) {
 	var changed []string
 	for _, rel := range m.sortedPaths() {
-		b, err := os.ReadFile(filepath.Join(repoRoot, rel))
+		path, err := safeJoin(repoRoot, rel)
+		if err != nil {
+			return nil, fmt.Errorf("verify %s: %w", rel, err)
+		}
+		b, err := os.ReadFile(path)
 		if os.IsNotExist(err) {
 			changed = append(changed, rel)
 			continue

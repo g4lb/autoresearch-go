@@ -159,3 +159,48 @@ func TestSnapshotPreservesPackagePaths(t *testing.T) {
 		t.Errorf("internal/b restored to %q, want its own original content", got)
 	}
 }
+
+func TestRejectsPathTraversal(t *testing.T) {
+	// Snapshot, Restore, and Verify must reject paths that escape the root.
+	// A corrupted or hostile manifest turns restore into an arbitrary-file-write.
+
+	root := t.TempDir()
+	store := filepath.Join(root, StoreDir)
+
+	// Test 1: Snapshot rejects ../escape
+	_, err := Snapshot(root, store, []string{"../escape_test.go"})
+	if err == nil {
+		t.Errorf("Snapshot with ../escape_test.go should error, got nil")
+	}
+
+	// Test 2: Restore rejects ../escape and does not create file outside root
+	escapeManifest := &Manifest{Files: map[string]string{"../escape_test.go": "deadbeef"}}
+	_, err = Restore(root, store, escapeManifest)
+	if err == nil {
+		t.Errorf("Restore with ../escape_test.go should error, got nil")
+	}
+	// Verify no file was created outside root
+	escapeFile := filepath.Join(filepath.Dir(root), "escape_test.go")
+	if _, err := os.Stat(escapeFile); !os.IsNotExist(err) {
+		t.Errorf("Restore created file outside root at %s", escapeFile)
+	}
+
+	// Test 3: Verify rejects ../escape
+	_, err = Verify(root, escapeManifest)
+	if err == nil {
+		t.Errorf("Verify with ../escape_test.go should error, got nil")
+	}
+
+	// Test 4: Snapshot rejects absolute paths
+	_, err = Snapshot(root, store, []string{"/tmp/escape_test.go"})
+	if err == nil {
+		t.Errorf("Snapshot with absolute path should error, got nil")
+	}
+
+	// Test 5: Restore rejects absolute paths and does not create file
+	absManifest := &Manifest{Files: map[string]string{"/tmp/evil_test.go": "deadbeef"}}
+	_, err = Restore(root, store, absManifest)
+	if err == nil {
+		t.Errorf("Restore with absolute path should error, got nil")
+	}
+}
