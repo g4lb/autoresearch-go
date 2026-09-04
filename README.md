@@ -28,6 +28,13 @@ the agent cannot reach it.
 | your `_test.go` files | frozen at baseline, restored before every run | nobody — restored automatically |
 | your Go source | whatever is in `scope` | **the agent** |
 | `program.md` | the agent's instructions | **you** |
+| frozen tests, baseline worktree, baseline record | lives outside your repo, under `os.UserCacheDir()` | nobody — the agent could not reach it even by editing every file in scope |
+
+That last row matters: the agent edits the repository, so anything the score depends
+on that *lived* there would be silently writable by the very agent it is meant to
+constrain. The only harness output that stays inside your repo is `results.tsv` (a
+human-readable log, not part of the metric) and `run.log` (subprocess transcripts) —
+both gitignored by `init`.
 
 ## Quick start
 
@@ -35,10 +42,20 @@ the agent cannot reach it.
 go install github.com/g4lb/autoresearch-go/cmd/autoresearch-go@latest
 
 cd your-go-project
-autoresearch-go init              # find benchmarks, write config + program.md
-autoresearch-go doctor            # is this machine fit to measure?
-autoresearch-go baseline -tag sep4 # freeze tests, pin the baseline commit
+autoresearch-go init                                 # find benchmarks, write config + program.md
+git add -A && git commit -m "autoresearch-go init"   # baseline refuses a dirty tree
+autoresearch-go doctor                               # is this machine fit to measure?
+autoresearch-go baseline -tag sep4                   # freeze tests, pin the baseline commit
 ```
+
+That commit matters — `init` only writes files, it does not commit them, and
+`baseline` refuses to run against an uncommitted tree because a baseline pinned
+against what's on disk (not what's in git) would not be reproducible. `init` writes
+three things: `.gitignore` entries, `.autoresearch/config.yaml`, and `program.md`.
+`.autoresearch/config.yaml` is the one file under `.autoresearch/` that gets
+committed — it's the run configuration, and humans own it; everything else the
+harness later writes under `.autoresearch/` (e.g. `profile`'s pprof output) is
+gitignored.
 
 Then start your agent in the repo:
 
@@ -48,6 +65,21 @@ Read program.md and start the optimization loop.
 
 It runs until you stop it. Each experiment is one commit, one verdict, one row in
 `results.tsv`.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `init` | Scans the repo, discovers benchmarks via `go/ast`, and writes `.autoresearch/config.yaml` + `program.md`. Refuses to overwrite an existing config without `-force`. |
+| `doctor` | Checks whether this machine can measure reliably (CPU frequency scaling, thermal throttling risk, disk space) and prints its findings. Informational — always exits 0. |
+| `baseline -tag <tag>` | Creates the run branch `autoresearch-go/<tag>`, freezes every in-scope `_test.go` file, and pins a detached worktree at the baseline commit. Refuses a dirty tree and a reused tag. |
+| `profile` | Runs the declared benchmarks under Go's CPU and memory profilers and prints the top hot spots — real `pprof` data on where time and allocations actually go, rather than an agent guessing from reading source. Writes `.autoresearch/profiles/{cpu,mem}.out`, openable with `go tool pprof -http=: <file>`. |
+| `eval` | Runs one experiment: gates (scope, config integrity, restore, build, vet, test), measures the candidate against the pinned baseline, scores it, appends a `results.tsv` row, and exits `0`/`1`/`2`/`3` for KEEP/DISCARD/FAIL/CRASH. |
+| `report` | Summarizes `results.tsv`: counts by status, cumulative speedup across kept experiments, and the largest individual wins. |
+
+Every command accepts `-C <dir>` to run against a repository other than the current
+directory, rather than changing the process's working directory — safer under
+concurrent invocations, and testable without `os.Chdir`.
 
 ## Worked example
 
@@ -181,6 +213,8 @@ An agent optimizing your code can "win" by cheating. Each route is closed:
 | Edit files outside the agreed area | `scope` violations fail before anything is even built |
 | Bank measurement noise as a win | a Mann-Whitney test must clear `p < 0.05`; noise is `DISCARD` |
 | Speed up A by wrecking B | any significant regression over 5 % rejects the change outright |
+| Swap or edit a dependency (`go.mod`/`go.sum`) | rejected outright regardless of `scope` — a dependency change is a human decision, not an autonomous one, and would change what is being measured rather than how fast it runs |
+| Loosen the rules mid-run (raise `max_regress_pct`, narrow `scope`, drop a benchmark) | `.autoresearch/config.yaml` is hashed at baseline; any change to it fails the run with a config-hash mismatch |
 | Compare against a stale baseline | the baseline is **re-measured every run**, interleaved with the candidate |
 
 That last one matters more than it looks. Comparing a candidate measured now against a
@@ -216,6 +250,11 @@ Stated plainly, because performance tools that oversell are worse than useless:
   rather than an absent one.
 - **Microbenchmarks are not your application.** A 50 % win on a hot function may be
   invisible end to end. Benchmark what actually matters.
+- **`count` below 4 can never reach significance.** The Mann-Whitney test behind `p`
+  has a best-case two-sided p-value of 0.1 at 3 measured rounds per side — above the
+  0.05 threshold no matter how large or how clean the real improvement is. Every
+  experiment would be discarded on a technicality, not on its merits. `config.yaml`
+  refuses `count` below 4 rather than let that happen silently.
 
 ## License
 
