@@ -46,6 +46,10 @@ func TestGuardRejectsSignificantRegressionEvenWhenScoreImproves(t *testing.T) {
 	if len(got.Regressions) != 1 || got.Regressions[0].Name != "B" {
 		t.Errorf("Regressions = %+v, want [B]", got.Regressions)
 	}
+	wantMsg := "regression guard tripped (limit +5.0%): B +12.0%"
+	if got.Message != wantMsg {
+		t.Errorf("Message = %q, want %q", got.Message, wantMsg)
+	}
 }
 
 func TestGuardIgnoresInsignificantRegression(t *testing.T) {
@@ -60,6 +64,32 @@ func TestGuardIgnoresInsignificantRegression(t *testing.T) {
 	}
 }
 
+func TestDecideDiscardsSignificantImprovementWhenScoreIsNotBetter(t *testing.T) {
+	// One benchmark improved significantly, but the geomean is still >= 1.
+	in := Input{
+		Deltas:        []bench.Delta{d("A", -30, true)},
+		Score:         1.05,
+		MaxRegressPct: 5,
+	}
+	got := Decide(in)
+	if got.Status != StatusDiscard || got.Reason != ReasonNoImprovement {
+		t.Fatalf("got %s/%s, want DISCARD/no_improvement", got.Status, got.Reason)
+	}
+}
+
+func TestGuardBoundaryAtExactLimit(t *testing.T) {
+	// A delta at exactly MaxRegressPct should NOT trip the guard (> not >=).
+	in := Input{
+		Deltas:        []bench.Delta{d("A", -30, true), d("B", 5.0, true)},
+		Score:         0.85,
+		MaxRegressPct: 5.0,
+	}
+	got := Decide(in)
+	if got.Status != StatusKeep || got.Reason != ReasonImproved {
+		t.Fatalf("got %s/%s, want KEEP/improved at exact boundary", got.Status, got.Reason)
+	}
+}
+
 func TestExitCodes(t *testing.T) {
 	tests := []struct {
 		status Status
@@ -69,10 +99,11 @@ func TestExitCodes(t *testing.T) {
 		{StatusDiscard, 1},
 		{StatusFail, 2},
 		{StatusCrash, 3},
+		{Status("BOGUS"), 2},
 	}
 	for _, tt := range tests {
 		if got := (Result{Status: tt.status}).ExitCode(); got != tt.want {
-			t.Errorf("%s.ExitCode() = %d, want %d", tt.status, got, tt.want)
+			t.Errorf("Status %q.ExitCode() = %d, want %d", tt.status, got, tt.want)
 		}
 	}
 }

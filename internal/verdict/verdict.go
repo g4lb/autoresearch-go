@@ -3,6 +3,7 @@ package verdict
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/g4lb/autoresearch-go/internal/bench"
 )
@@ -70,18 +71,18 @@ func Decide(in Input) Result {
 		}
 	}
 	if len(regressions) > 0 {
-		names := ""
+		var sb strings.Builder
 		for i, d := range regressions {
 			if i > 0 {
-				names += ", "
+				sb.WriteString(", ")
 			}
-			names += fmt.Sprintf("%s %+.1f%%", d.Name, d.PctChange)
+			fmt.Fprintf(&sb, "%s %+.1f%%", d.Name, d.PctChange)
 		}
 		return Result{
 			Status:      StatusDiscard,
 			Reason:      ReasonGuardRegression,
 			Score:       in.Score,
-			Message:     fmt.Sprintf("regression guard tripped (limit %+.1f%%): %s", in.MaxRegressPct, names),
+			Message:     fmt.Sprintf("regression guard tripped (limit %+.1f%%): %s", in.MaxRegressPct, sb.String()),
 			Regressions: regressions,
 		}
 	}
