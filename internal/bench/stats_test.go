@@ -91,7 +91,7 @@ func TestGeoMeanEmptyIsAnError(t *testing.T) {
 	}
 }
 
-func TestCompareAllOnlyCommonBenchmarks(t *testing.T) {
+func TestCompareAllErrorsWhenBenchmarkDisappears(t *testing.T) {
 	base := NewSet()
 	base.record("BenchmarkA", UnitTime, 10)
 	base.record("BenchmarkA", UnitTime, 11)
@@ -103,10 +103,53 @@ func TestCompareAllOnlyCommonBenchmarks(t *testing.T) {
 	cand.record("BenchmarkA", UnitTime, 9)
 
 	ds, err := CompareAll(base, cand, UnitTime)
+	if err == nil {
+		t.Fatalf("CompareAll() = nil error, want error for missing BenchmarkGone")
+	}
+	if ds != nil {
+		t.Errorf("CompareAll returned non-nil slice on error: %+v", ds)
+	}
+	if !contains(err.Error(), "BenchmarkGone") {
+		t.Errorf("error message does not mention BenchmarkGone: %v", err)
+	}
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCompareAllSortedByName(t *testing.T) {
+	base := NewSet()
+	// Insert in non-alphabetical order: C, A, B
+	base.record("BenchmarkC", UnitTime, 10)
+	base.record("BenchmarkC", UnitTime, 11)
+	base.record("BenchmarkA", UnitTime, 20)
+	base.record("BenchmarkA", UnitTime, 21)
+	base.record("BenchmarkB", UnitTime, 30)
+	base.record("BenchmarkB", UnitTime, 31)
+
+	cand := NewSet()
+	// Insert in different order: B, C, A
+	cand.record("BenchmarkB", UnitTime, 9)
+	cand.record("BenchmarkB", UnitTime, 9)
+	cand.record("BenchmarkC", UnitTime, 19)
+	cand.record("BenchmarkC", UnitTime, 19)
+	cand.record("BenchmarkA", UnitTime, 29)
+	cand.record("BenchmarkA", UnitTime, 29)
+
+	ds, err := CompareAll(base, cand, UnitTime)
 	if err != nil {
 		t.Fatalf("CompareAll: %v", err)
 	}
-	if len(ds) != 1 || ds[0].Name != "BenchmarkA" {
-		t.Fatalf("CompareAll = %+v, want only BenchmarkA", ds)
+	if len(ds) != 3 {
+		t.Fatalf("CompareAll returned %d deltas, want 3", len(ds))
+	}
+	if ds[0].Name != "BenchmarkA" || ds[1].Name != "BenchmarkB" || ds[2].Name != "BenchmarkC" {
+		t.Errorf("Names not in alphabetical order: %s, %s, %s", ds[0].Name, ds[1].Name, ds[2].Name)
 	}
 }

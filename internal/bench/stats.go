@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 
 	"golang.org/x/perf/benchmath"
 )
@@ -75,12 +76,15 @@ func Compare(base, cand *Set, name, unit string) (Delta, error) {
 }
 
 // CompareAll compares every benchmark present in both sets, sorted by name.
-// Benchmarks missing from either side are skipped: a candidate that dropped a
-// benchmark is caught by the frozen-test gate, not here.
+// Every benchmark measured at baseline must also appear in the candidate.
+// If a benchmark disappears from the candidate, it returns an error: a missing
+// benchmark cannot be checked for regressions, which would hide a real problem.
 func CompareAll(base, cand *Set, unit string) ([]Delta, error) {
 	var out []Delta
+	var missing []string
 	for _, name := range base.Names() {
 		if _, ok := cand.Values(name, unit); !ok {
+			missing = append(missing, name)
 			continue
 		}
 		d, err := Compare(base, cand, name, unit)
@@ -88,6 +92,12 @@ func CompareAll(base, cand *Set, unit string) ([]Delta, error) {
 			return nil, err
 		}
 		out = append(out, d)
+	}
+	if len(missing) > 0 {
+		// Sort for deterministic error message
+		sort.Strings(missing)
+		return nil, fmt.Errorf("benchmark(s) measured at baseline but missing from the candidate: %v — "+
+			"a benchmark that disappears cannot be checked for regressions", missing)
 	}
 	if len(out) == 0 {
 		return nil, errors.New("no benchmark appears in both baseline and candidate")
