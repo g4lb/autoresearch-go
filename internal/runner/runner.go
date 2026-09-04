@@ -13,6 +13,29 @@ import (
 	"time"
 )
 
+// capWriter retains at most limit bytes, then drops the rest.
+type capWriter struct {
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (w *capWriter) Write(p []byte) (int, error) {
+	if remaining := w.limit - w.buf.Len(); remaining > 0 {
+		if len(p) > remaining {
+			w.buf.Write(p[:remaining])
+			w.truncated = true
+		} else {
+			w.buf.Write(p)
+		}
+	} else {
+		w.truncated = true
+	}
+	// Always report a full write: a short write would make exec fail the
+	// command and would misreport a chatty test as a harness error.
+	return len(p), nil
+}
+
 // Result is the outcome of one subprocess.
 type Result struct {
 	Args     []string
@@ -28,6 +51,9 @@ func (r *Result) OK() bool { return r.ExitCode == 0 && !r.TimedOut }
 
 // Tail returns the last n lines of stderr, falling back to stdout.
 func (r *Result) Tail(n int) string {
+	if n < 0 {
+		n = 0
+	}
 	src := string(r.Stderr)
 	if strings.TrimSpace(src) == "" {
 		src = string(r.Stdout)
@@ -69,16 +95,32 @@ func (r *Runner) Go(ctx context.Context, args ...string) (*Result, error) {
 		cmd.Env = os.Environ()
 	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	setupProcessGroup(cmd)
+	cmd.WaitDelay = 10 * time.Second
+
+	const capBytes = 4 * 1024 * 1024 // 4 MB per stream
+	stdout := &capWriter{limit: capBytes}
+	stderr := &capWriter{limit: capBytes}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	start := time.Now()
 	err := cmd.Run()
+
+	// Extract bytes and add truncation markers if needed
+	stdoutBytes := stdout.buf.Bytes()
+	if stdout.truncated {
+		stdoutBytes = append(stdoutBytes, []byte("\n[output truncated at 4MB]\n")...)
+	}
+	stderrBytes := stderr.buf.Bytes()
+	if stderr.truncated {
+		stderrBytes = append(stderrBytes, []byte("\n[output truncated at 4MB]\n")...)
+	}
+
 	res := &Result{
 		Args:     args,
-		Stdout:   stdout.Bytes(),
-		Stderr:   stderr.Bytes(),
+		Stdout:   stdoutBytes,
+		Stderr:   stderrBytes,
 		Duration: time.Since(start),
 	}
 

@@ -110,3 +110,73 @@ func TestTimeoutIsFlagged(t *testing.T) {
 		t.Fatalf("TimedOut = false, want true (exit=%d)", res.ExitCode)
 	}
 }
+
+func TestCapWriterBounds(t *testing.T) {
+	w := &capWriter{limit: 100}
+
+	// Write less than limit
+	n, err := w.Write([]byte("hello"))
+	if err != nil || n != 5 {
+		t.Fatalf("Write: n=%d err=%v", n, err)
+	}
+	if w.truncated {
+		t.Error("truncated after small write")
+	}
+
+	// Write to exceed limit
+	n, err = w.Write(make([]byte, 96)) // Total would be 101
+	if err != nil || n != 96 {
+		t.Fatalf("Write: n=%d err=%v", n, err)
+	}
+	if !w.truncated {
+		t.Error("truncated not set after exceeding limit")
+	}
+
+	// Verify buffer size is capped
+	if w.buf.Len() > 100 {
+		t.Errorf("buffer size %d exceeds limit 100", w.buf.Len())
+	}
+
+	// Write more after truncated
+	n, err = w.Write([]byte("more"))
+	if err != nil || n != 4 {
+		t.Fatalf("Write after cap: n=%d err=%v", n, err)
+	}
+	if w.buf.Len() > 100 {
+		t.Errorf("buffer still capped at %d", w.buf.Len())
+	}
+}
+
+func TestTailEdgeCases(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		stderr    string
+		stdout    string
+		n         int
+		wantLines int
+	}{
+		{"empty", "", "", 5, 0},
+		{"single_line", "hello", "", 1, 1},
+		{"single_line_n_zero", "hello", "", 0, 0},
+		{"single_line_negative_n", "hello", "", -1, 0},
+		{"multi_line_n_negative", "a\nb\nc", "", -5, 0},
+		{"multi_line_n_exceeds", "a\nb\nc", "", 10, 3},
+		{"fallback_stdout", "", "line1\nline2", 1, 1},
+		{"stderr_precedence", "err1\nerr2", "out1", 1, 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			res := &Result{
+				Stderr: []byte(tt.stderr),
+				Stdout: []byte(tt.stdout),
+			}
+			tail := res.Tail(tt.n)
+			lines := strings.Split(strings.TrimSpace(tail), "\n")
+			if strings.TrimSpace(tail) == "" {
+				lines = nil
+			}
+			if len(lines) != tt.wantLines {
+				t.Errorf("got %d lines, want %d; tail=%q", len(lines), tt.wantLines, tail)
+			}
+		})
+	}
+}
