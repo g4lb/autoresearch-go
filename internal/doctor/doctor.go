@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/g4lb/autoresearch-go/internal/gitx"
 )
@@ -277,32 +276,9 @@ func checkLinux() Finding {
 }
 
 // checkDisk checks available disk space in the given directory.
+// Platform-specific implementation in disk_unix.go and disk_other.go.
 func checkDisk(dir string) Finding {
-	// Use syscall.Statfs to check disk space.
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(dir, &stat); err != nil {
-		return Finding{
-			Name:     "disk",
-			Detail:   fmt.Sprintf("available disk space: unknown (error: %v)", err),
-			Severity: SeverityOK,
-		}
-	}
-
-	// Available space = available blocks * block size
-	availableBytes := uint64(stat.Bavail) * uint64(stat.Bsize)
-	availableGB := float64(availableBytes) / (1024.0 * 1024.0 * 1024.0)
-
-	const minGBWarn = 2.0
-	severity := SeverityOK
-	if availableGB < minGBWarn {
-		severity = SeverityWarn
-	}
-
-	return Finding{
-		Name:     "disk",
-		Detail:   fmt.Sprintf("available disk space: %.1f GB", availableGB),
-		Severity: severity,
-	}
+	return checkDiskSpace(dir)
 }
 
 // isVersionAtLeast checks if version >= minVersion.

@@ -3,13 +3,14 @@
 package profile
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/g4lb/autoresearch-go/internal/runner"
 )
 
 // Report contains the text output from pprof -top for CPU and memory profiles,
@@ -45,31 +46,21 @@ func Capture(ctx context.Context, dir, pattern, benchtime, dest string, timeout 
 	memProfilePath := filepath.Join(dest, "mem.out")
 	binaryPath := filepath.Join(tmpDir, "bench.test")
 
-	// Create a context with the specified timeout.
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
+	// Run go test with profiling flags via the runner, which handles process groups,
+	// timeouts, and output buffering in one place.
+	r := runner.New(dir, timeout, nil)
+	result, err := r.BenchProfile(ctx, pattern, benchtime, cpuProfilePath, memProfilePath, binaryPath)
+	if err != nil {
+		return nil, fmt.Errorf("run benchmarks: %w", err)
 	}
-
-	// Run go test with profiling flags, capturing output to avoid flooding context.
-	var stdout, stderr bytes.Buffer
-	testCmd := exec.CommandContext(ctx, "go", "test",
-		"-run", "^$",
-		"-bench", pattern,
-		"-benchtime", benchtime,
-		"-count=1",
-		"-cpuprofile", cpuProfilePath,
-		"-memprofile", memProfilePath,
-		"-o", binaryPath,
-		"./...",
-	)
-	testCmd.Dir = dir
-	testCmd.Stdout = &stdout
-	testCmd.Stderr = &stderr
-
-	if err := testCmd.Run(); err != nil {
-		return nil, fmt.Errorf("run benchmarks: %w\n%s", err, stderr.String())
+	if !result.OK() {
+		// Include stderr if available, otherwise stdout
+		errOutput := string(result.Stderr)
+		if errOutput == "" {
+			errOutput = string(result.Stdout)
+		}
+		return nil, fmt.Errorf("run benchmarks: exit code %d, timed out: %v\n%s",
+			result.ExitCode, result.TimedOut, errOutput)
 	}
 
 	// Extract CPU profile using pprof.
