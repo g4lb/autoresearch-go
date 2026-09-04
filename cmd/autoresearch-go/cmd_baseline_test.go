@@ -3,8 +3,10 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/g4lb/autoresearch-go/internal/config"
 	"github.com/g4lb/autoresearch-go/internal/freeze"
 	"github.com/g4lb/autoresearch-go/internal/gitx"
 	"github.com/g4lb/autoresearch-go/internal/results"
@@ -182,5 +184,65 @@ func TestBaselineRollsBackBranchOnFailureAfterCreation(t *testing.T) {
 		t.Fatal(err)
 	} else if exists {
 		t.Error("autoresearch-go/sep6 still exists after a failed baseline, want it deleted")
+	}
+}
+
+func TestBaselineRefusesUnknownBenchmark(t *testing.T) {
+	// A typo'd benchmark name in config.yaml must be caught here, before the
+	// run branch exists — not left for eval's measure.Run to discover hours
+	// later with "no benchmarks matched", by which point nobody is watching.
+	dir := copyDemoRepo(t)
+	mustInit(t, dir)
+
+	configPath := filepath.Join(dir, config.Path)
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Benchmarks = []string{"BenchmarkDoesNotExist"}
+	if err := os.WriteFile(configPath, renderConfig(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-q", "-m", "config names an unknown benchmark")
+
+	var code int
+	stderr := captureStderr(t, func() {
+		code = runBaseline([]string{"-C", dir, "-tag", "sep7"})
+	})
+	if code == exitOK {
+		t.Fatal("runBaseline accepted an unknown benchmark, want refusal")
+	}
+	if !strings.Contains(stderr, "BenchmarkDoesNotExist") {
+		t.Errorf("stderr = %q, want it to name the unknown benchmark", stderr)
+	}
+
+	if exists, err := gitx.BranchExists(dir, "autoresearch-go/sep7"); err != nil {
+		t.Fatal(err)
+	} else if exists {
+		t.Error("autoresearch-go/sep7 was created despite an unknown benchmark, want no branch")
+	}
+}
+
+func TestBaselineAcceptsEmptyBenchmarksList(t *testing.T) {
+	// An empty benchmarks: list means "measure everything discovered" and
+	// must remain valid — it is not itself an unknown-benchmark configuration.
+	dir := copyDemoRepo(t)
+	mustInit(t, dir)
+
+	configPath := filepath.Join(dir, config.Path)
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Benchmarks = nil
+	if err := os.WriteFile(configPath, renderConfig(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-q", "-m", "empty benchmarks list")
+
+	if code := runBaseline([]string{"-C", dir, "-tag", "sep8"}); code != exitOK {
+		t.Fatalf("runBaseline with an empty benchmarks list = %d, want %d", code, exitOK)
 	}
 }

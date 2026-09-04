@@ -98,6 +98,37 @@ func runBaseline(args []string) int {
 		return exitUsage
 	}
 
+	// A configured benchmark that does not exist would pin the run to
+	// something no `eval` can ever measure: nothing catches it until
+	// measure.Run fails with "no benchmarks matched", by which point the
+	// human has walked away for the night. Catch it here, before the branch
+	// exists, so a config typo never needs rolling back. An empty
+	// Benchmarks list means "all discovered" and stays valid.
+	if len(cfg.Benchmarks) > 0 {
+		discovered, err := discover.Benchmarks(root)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
+			return exitUsage
+		}
+		available := discover.BaseNames(discovered)
+		known := make(map[string]bool, len(available))
+		for _, n := range available {
+			known[n] = true
+		}
+		var unknown []string
+		for _, n := range cfg.Benchmarks {
+			if !known[n] {
+				unknown = append(unknown, n)
+			}
+		}
+		if len(unknown) > 0 {
+			fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %s names unknown benchmark(s): %s\n",
+				configPath, strings.Join(unknown, ", "))
+			fmt.Fprintf(os.Stderr, "available: %s\n", strings.Join(available, ", "))
+			return exitUsage
+		}
+	}
+
 	// results.tsv is the sole, durable record of a previous unattended run.
 	// A fresh baseline must not silently truncate it: check — and refuse,
 	// absent -force — before anything else is created or mutated, so a

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"os"
@@ -8,6 +9,29 @@ import (
 	"path/filepath"
 	"testing"
 )
+
+// captureStderr redirects os.Stderr for the duration of fn and returns
+// everything written to it. Tests in this package never run in parallel, so
+// swapping the package-level os.Stderr for the duration of one call is safe.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = orig }()
+
+	fn()
+
+	w.Close()
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
 
 // gitIsIgnored reports whether path (relative to dir) is excluded by dir's
 // gitignore rules, via `git check-ignore -q`: exit 0 means ignored, exit 1
