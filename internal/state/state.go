@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -33,6 +35,13 @@ func StateDir(repoRoot, tag string) (string, error) {
 	abs, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return "", err
+	}
+	// Resolve symlinked ancestors (e.g. macOS /tmp -> /private/tmp) so the
+	// same repository reached by two different path spellings hashes to the
+	// same key. If the path does not exist yet, fall back to the
+	// unresolved absolute path rather than failing.
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
 	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
@@ -105,17 +114,24 @@ func LoadBaseline(path string) (*Baseline, error) {
 }
 
 // BenchPattern builds a -bench regexp that matches exactly these benchmarks.
-// An empty list yields ".", meaning every benchmark.
+// An empty list yields ".", meaning every benchmark. Each name is escaped
+// with regexp.QuoteMeta: names discovered by internal/discover are always
+// valid Go identifiers and need no escaping, but benchmarks: in
+// config.yaml is documented as hand-editable, and a stray metacharacter in
+// a hand-typed name would otherwise silently BROADEN the pattern to match
+// benchmarks nobody selected.
 func BenchPattern(names []string) string {
 	if len(names) == 0 {
 		return "."
 	}
-	out := "^("
+	var b strings.Builder
+	b.WriteString("^(")
 	for i, n := range names {
 		if i > 0 {
-			out += "|"
+			b.WriteByte('|')
 		}
-		out += n
+		b.WriteString(regexp.QuoteMeta(n))
 	}
-	return out + ")$"
+	b.WriteString(")$")
+	return b.String()
 }

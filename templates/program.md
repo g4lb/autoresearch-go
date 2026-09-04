@@ -42,8 +42,17 @@ What you MUST NOT do:
   before every `eval`, so an edit there is silently discarded — worse, it
   wastes an experiment slot for nothing. If a test looks wrong, say so in
   `results.tsv` and move on; do not try to route around it.
-- Edit anything outside `scope`, including `.autoresearch/`, `go.mod`, and
-  `go.sum`. The scope gate fails the experiment before it is even measured.
+- Edit `go.mod` or `go.sum`, ever. These are rejected outright regardless of
+  what `scope` says. Changing a dependency is a supply-chain decision a
+  human makes, not something an unattended loop decides, and a swapped
+  dependency can change *what* is measured, not just how fast it runs.
+- Edit `.autoresearch/config.yaml`. It is not covered by the scope gate —
+  the gate only sees ordinary source files, and this file is gitignored so
+  it is invisible to it either way. Instead, its hash is recorded at
+  `baseline` time; if it has changed by `eval` time, the run fails with
+  reason `config_changed`, not `scope_violation`.
+- Edit an ordinary source file outside `scope`. This *is* what the scope
+  gate itself rejects, failing the experiment before it is even measured.
 - Try to weaken, disable, or reinterpret the verdict. `eval`'s exit code and
   `--json` output are the only truth. If a result looks wrong, say so in
   `results.tsv`; do not try to make the harness agree with you by other
@@ -68,7 +77,7 @@ Any status the harness cannot classify is reported as exit code `2`
 (FAIL) rather than a silent success — treat an unrecognized `--json` status
 the same way you would treat FAIL.
 
-With `-json`, `eval` prints one JSON object to stdout with (at least) these
+With `--json`, `eval` prints one JSON object to stdout with (at least) these
 fields:
 
 ```json
