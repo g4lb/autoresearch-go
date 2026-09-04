@@ -78,3 +78,16 @@ func TestLoadMissingFileIsEmpty(t *testing.T) {
 		t.Errorf("Load = %v, want empty", rows)
 	}
 }
+
+func TestAppendReportsWriteErrors(t *testing.T) {
+	// Append to a path inside a nonexistent directory.
+	p := filepath.Join(t.TempDir(), "nonexistent-dir", "results.tsv")
+	err := Append(p, Row{Commit: "abc", Status: "keep", Description: "test"})
+	if err == nil {
+		t.Fatal("Append: expected an error for nonexistent directory, got nil")
+	}
+	// Error should mention the path so the user can debug it.
+	if !strings.Contains(err.Error(), p) {
+		t.Errorf("error = %v, does not mention path %q", err, p)
+	}
+}

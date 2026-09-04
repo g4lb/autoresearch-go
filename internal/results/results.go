@@ -16,6 +16,7 @@ const Path = "results.tsv"
 const Header = "commit\tscore\tbest_bench_delta\tallocs_delta\tstatus\tdescription"
 
 // Row is one logged experiment.
+// Field order must be kept in step with Header, Append's format string, and Load's parts[0..5] indexing.
 type Row struct {
 	Commit string
 	// Score is the geomean of per-benchmark ratios; 1.0 means no change.
@@ -39,27 +40,44 @@ func clean(s string) string {
 }
 
 // Append adds one row, creating the file with a header when needed.
-func Append(path string, r Row) error {
+func Append(path string, r Row) (err error) {
 	_, statErr := os.Stat(path)
 	isNew := os.IsNotExist(statErr)
 
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("open %s: %w", path, err)
+	f, ferr := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if ferr != nil {
+		return fmt.Errorf("open %s: %w", path, ferr)
 	}
-	defer f.Close()
+	defer func() {
+		// Close surfaces deferred I/O errors (full disk, quota, network FS).
+		// Only report it if nothing has already failed.
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close %s: %w", path, cerr)
+		}
+	}()
 
 	if isNew {
 		if _, err := fmt.Fprintln(f, Header); err != nil {
 			return err
 		}
 	}
-	_, err = fmt.Fprintf(f, "%s\t%.4f\t%.2f\t%.2f\t%s\t%s\n",
-		clean(r.Commit), r.Score, r.BestBenchDelta, r.AllocsDelta, clean(r.Status), clean(r.Description))
-	return err
+	if _, err := fmt.Fprintf(f, "%s\t%.4f\t%.2f\t%.2f\t%s\t%s\n",
+		clean(r.Commit), r.Score, r.BestBenchDelta, r.AllocsDelta, clean(r.Status), clean(r.Description)); err != nil {
+		return err
+	}
+	// Sync ensures the log is durable across system crashes, since it is the sole record of overnight runs.
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("sync %s: %w", path, err)
+	}
+	return nil
 }
 
 // Load reads every row. A missing file is an empty log, not an error.
+// Strict by design: a malformed line fails the whole load rather than being skipped.
+// Sanitising makes malformed rows nearly impossible, so one is a real signal — a torn write or hand edit —
+// and the error names the exact file and line so it can be fixed. Silently dropping rows would let a
+// corrupted log masquerade as a short one, which is worse for a file that is the sole record of an
+// overnight run.
 func Load(path string) ([]Row, error) {
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
