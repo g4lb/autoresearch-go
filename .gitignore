@@ -1,0 +1,5 @@
+docs/superpowers/
+.autoresearch/
+results.tsv
+run.log
+/autoresearch-go
