@@ -13,10 +13,14 @@ import (
 	"strings"
 )
 
-// Locations relative to the repository root.
+// Locations relative to the run's out-of-tree state.StateDir — never to the
+// repository root. The frozen store and its manifest are part of what the
+// success metric depends on, so they must live where the agent being
+// measured cannot reach them; a caller that joins these onto the repository
+// root instead would silently reintroduce that hole.
 const (
-	StoreDir     = ".autoresearch/frozen"
-	ManifestPath = ".autoresearch/frozen/manifest.json"
+	StoreDir     = "frozen"
+	ManifestPath = "frozen/manifest.json"
 )
 
 // Manifest maps repo-relative file paths to their sha256 at baseline time.

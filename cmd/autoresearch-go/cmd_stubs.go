@@ -10,8 +10,7 @@ func notImplemented(name string) int {
 	return exitUsage
 }
 
-func runDoctor(args []string) int   { return notImplemented("doctor") }
-func runBaseline(args []string) int { return notImplemented("baseline") }
-func runProfile(args []string) int  { return notImplemented("profile") }
-func runEval(args []string) int     { return notImplemented("eval") }
-func runReport(args []string) int   { return notImplemented("report") }
+func runDoctor(args []string) int  { return notImplemented("doctor") }
+func runProfile(args []string) int { return notImplemented("profile") }
+func runEval(args []string) int    { return notImplemented("eval") }
+func runReport(args []string) int  { return notImplemented("report") }

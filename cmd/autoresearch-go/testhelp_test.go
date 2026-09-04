@@ -95,11 +95,16 @@ func copyDemoRepo(t *testing.T) string {
 }
 
 // mustInit runs runInit against dir (via -C) and fails the test unless it
-// succeeds. It is shared with later tasks (baseline, eval) that need an
-// already-initialized repository to build on.
+// succeeds. It then commits init's output (.gitignore, .autoresearch/config.yaml,
+// program.md), mirroring the realistic workflow where a human commits the
+// generated files before running baseline. Later tasks (baseline, eval) need
+// an already-initialized AND clean repository to build on: baseline refuses
+// a dirty tree, and init alone leaves .gitignore and program.md untracked.
 func mustInit(t *testing.T, dir string) {
 	t.Helper()
 	if code := runInit([]string{"-C", dir}); code != exitOK {
 		t.Fatalf("runInit(-C %s) = %d, want %d", dir, code, exitOK)
 	}
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-q", "-m", "autoresearch-go init")
 }
