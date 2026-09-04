@@ -1,0 +1,9 @@
+goos: darwin
+goarch: arm64
+pkg: example.com/demo
+cpu: Apple M1 Pro
+BenchmarkParse-10   	 3000000	       412.3 ns/op	     128 B/op	       3 allocs/op
+BenchmarkParse-10   	 3000000	       401.1 ns/op	     128 B/op	       3 allocs/op
+BenchmarkEncode-10  	 1000000	      1050.0 ns/op	     512 B/op	       9 allocs/op
+PASS
+ok  	example.com/demo	4.512s
