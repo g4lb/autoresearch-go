@@ -25,6 +25,12 @@ import (
 // every one of which lives under state.StateDir, OUTSIDE the repository
 // being optimized. Only results.tsv, a human-readable log rather than part
 // of the metric, stays in the (gitignored) repository.
+//
+// A single working directory supports one run at a time: the git checkout
+// and results.tsv are both repo-scoped, not tag-scoped, so two concurrent
+// invocations against the same checkout would race on `git checkout -b` and
+// on the results-log guard. Concurrent baseline runs against the same repo
+// are unsupported — run them against separate clones instead.
 func runBaseline(args []string) int {
 	fs := flag.NewFlagSet("baseline", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -109,40 +115,74 @@ func runBaseline(args []string) int {
 		return exitUsage
 	}
 
+	// Recorded before CreateBranch so a failure anywhere below can put the
+	// working tree back exactly where it found it.
+	originalBranch, err := gitx.CurrentBranch(root)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
+		return exitUsage
+	}
+
 	if err := gitx.CreateBranch(root, branch); err != nil {
 		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: create branch %s: %v\n", branch, err)
 		return exitUsage
 	}
 
-	files, err := discover.TestFiles(root, cfg.Unfreeze)
+	// Everything from here on can fail partway through (full disk,
+	// permissions, a stale lock). If it does, the run branch created above
+	// must not be left behind consuming this -tag permanently: roll back to
+	// originalBranch and delete branch before reporting the failure.
+	commit, frozenCount, err := finishBaseline(root, stateDir, configPath, resultsPath, branch, *tag, cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
+		if coErr := gitx.Checkout(root, originalBranch); coErr != nil {
+			fmt.Fprintf(os.Stderr, "autoresearch-go baseline: cleanup did not fully succeed: checkout %s: %v\n"+
+				"you may need to run `git checkout %s && git branch -D %s` by hand.\n",
+				originalBranch, coErr, originalBranch, branch)
+			return exitUsage
+		}
+		if dErr := gitx.DeleteBranch(root, branch); dErr != nil {
+			fmt.Fprintf(os.Stderr, "autoresearch-go baseline: cleanup did not fully succeed: delete branch %s: %v\n"+
+				"you may need to run `git branch -D %s` by hand.\n", branch, dErr, branch)
+		}
 		return exitUsage
+	}
+
+	printBaselineSummary(branch, commit, frozenCount, cfg.Benchmarks)
+	return exitOK
+}
+
+// finishBaseline performs every remaining baseline step once the run branch
+// exists: freezing in-scope test files, recording the baseline, pinning the
+// worktree, and resetting results.tsv. Split out from runBaseline so a
+// failure at any point here can be compensated for uniformly by its caller
+// (checking the original branch back out and deleting the run branch)
+// instead of duplicating that rollback at every return site.
+func finishBaseline(root, stateDir, configPath, resultsPath, branch, tag string, cfg config.Config) (commit string, frozenCount int, err error) {
+	files, err := discover.TestFiles(root, cfg.Unfreeze)
+	if err != nil {
+		return "", 0, err
 	}
 	storeDir := filepath.Join(stateDir, freeze.StoreDir)
 	manifest, err := freeze.Snapshot(root, storeDir, files)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: freeze tests: %v\n", err)
-		return exitUsage
+		return "", 0, fmt.Errorf("freeze tests: %w", err)
 	}
 	if err := manifest.Save(filepath.Join(stateDir, freeze.ManifestPath)); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: save manifest: %v\n", err)
-		return exitUsage
+		return "", 0, fmt.Errorf("save manifest: %w", err)
 	}
 
-	commit, err := gitx.HeadCommit(root)
+	commit, err = gitx.HeadCommit(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
-		return exitUsage
+		return "", 0, err
 	}
 	configHash, err := sha256File(configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: hash config: %v\n", err)
-		return exitUsage
+		return "", 0, fmt.Errorf("hash config: %w", err)
 	}
 
 	b := state.Baseline{
-		Tag:          *tag,
+		Tag:          tag,
 		Branch:       branch,
 		Commit:       commit,
 		CreatedAt:    time.Now().UTC(),
@@ -151,8 +191,7 @@ func runBaseline(args []string) int {
 		ConfigSHA256: configHash,
 	}
 	if err := b.Save(filepath.Join(stateDir, state.BaselineFile)); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: save baseline record: %v\n", err)
-		return exitUsage
+		return "", 0, fmt.Errorf("save baseline record: %w", err)
 	}
 
 	// Pin the baseline worktree OUTSIDE the repository, at the exact commit
@@ -163,21 +202,18 @@ func runBaseline(args []string) int {
 	worktree := filepath.Join(stateDir, state.WorktreeName)
 	_ = gitx.RemoveWorktree(root, worktree)
 	if err := gitx.AddWorktree(root, worktree, commit); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: pin baseline worktree: %v\n", err)
-		return exitUsage
+		return "", 0, fmt.Errorf("pin baseline worktree: %w", err)
 	}
 
 	// Start this run's log fresh: a baseline is a new fixed reference point,
 	// so rows measured against a previous baseline no longer apply. The
-	// guard above already established this is safe: resultsPath is either
+	// caller's guard already established this is safe: resultsPath is either
 	// missing, header-only, or -force was passed.
 	if err := os.WriteFile(resultsPath, []byte(results.Header+"\n"), 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: init %s: %v\n", results.Path, err)
-		return exitUsage
+		return "", 0, fmt.Errorf("init %s: %w", results.Path, err)
 	}
 
-	printBaselineSummary(branch, commit, len(manifest.Files), cfg.Benchmarks)
-	return exitOK
+	return commit, len(manifest.Files), nil
 }
 
 // sha256File hashes a file's contents, hex-encoded.

@@ -16,10 +16,16 @@ import (
 	"github.com/g4lb/autoresearch-go/templates"
 )
 
-// gitignoreEntries are the lines init adds to .gitignore. They keep every
-// piece of the harness's out-of-repo footprint (and its own artifacts) out
-// of the repository the agent commits to.
-var gitignoreEntries = []string{".autoresearch/", "results.tsv", "run.log"}
+// gitignoreEntries are the lines init adds to .gitignore. .autoresearch/*
+// ignores everything the harness itself writes under that directory (e.g.
+// Task 16's profile output under .autoresearch/profiles/), while the
+// negation re-includes config.yaml — the one file under .autoresearch/ that
+// is meant to be version-controlled, since humans own it and want their
+// edits tracked. Note the "/*": git cannot re-include a file whose parent
+// directory is itself excluded, so ".autoresearch/" followed by a negation
+// would silently fail to un-ignore config.yaml; excluding the directory's
+// contents and re-including the one file inside it is the form that works.
+var gitignoreEntries = []string{".autoresearch/*", "!.autoresearch/config.yaml", "results.tsv", "run.log"}
 
 // runInit scans a repository, discovers its benchmarks, and writes
 // `.autoresearch/config.yaml` and `program.md`. It is the entry point every

@@ -61,6 +61,23 @@ func CreateBranch(dir, name string) error {
 	return err
 }
 
+// Checkout switches the working tree to an existing branch (or other ref).
+// Used to compensate for a run branch created but not completed: on a later
+// failure the caller checks the original branch back out before deleting
+// the abandoned one with DeleteBranch.
+func Checkout(dir, ref string) error {
+	_, err := git(dir, "checkout", ref)
+	return err
+}
+
+// DeleteBranch force-deletes a local branch. Used to undo a run branch left
+// behind by a baseline (or similar) attempt that failed partway through, so
+// a retry under the same name is not permanently blocked.
+func DeleteBranch(dir, name string) error {
+	_, err := git(dir, "branch", "-D", name)
+	return err
+}
+
 // IsClean reports whether the working tree has no changes.
 func IsClean(dir string) (bool, error) {
 	out, err := git(dir, "status", "--porcelain")

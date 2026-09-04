@@ -1,12 +1,32 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 )
+
+// gitIsIgnored reports whether path (relative to dir) is excluded by dir's
+// gitignore rules, via `git check-ignore -q`: exit 0 means ignored, exit 1
+// means not ignored, any other outcome fails the test.
+func gitIsIgnored(t *testing.T, dir, path string) bool {
+	t.Helper()
+	cmd := exec.Command("git", "check-ignore", "-q", path)
+	cmd.Dir = dir
+	err := cmd.Run()
+	if err == nil {
+		return true
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) && ee.ExitCode() == 1 {
+		return false
+	}
+	t.Fatalf("git check-ignore %s: %v", path, err)
+	return false
+}
 
 // runGit runs git in dir, failing the test on error. It never touches global
 // git config: identity is always set repo-local by copyDemoRepo.

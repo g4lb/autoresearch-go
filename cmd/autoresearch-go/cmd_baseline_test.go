@@ -140,3 +140,47 @@ func TestBaselineForceOverwritesResultsLog(t *testing.T) {
 		t.Errorf("results.tsv = %q, want just the header after -force", got)
 	}
 }
+
+func TestBaselineRollsBackBranchOnFailureAfterCreation(t *testing.T) {
+	// A failure after the run branch is created must not permanently burn
+	// the -tag: it must leave the repository back on its original branch
+	// with the (never-finished) run branch deleted, so a retry can succeed.
+	dir := copyDemoRepo(t)
+	mustInit(t, dir)
+
+	original, err := gitx.CurrentBranch(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stateDir, err := state.StateDir(dir, "sep6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Occupy the frozen store's path with a plain file. freeze.Snapshot's
+	// os.MkdirAll then fails deterministically and portably (a name
+	// collision, not a permission check) once baseline reaches it — which
+	// is after the run branch has already been created.
+	storeDir := filepath.Join(stateDir, freeze.StoreDir)
+	if err := os.WriteFile(storeDir, []byte("occupied"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if code := runBaseline([]string{"-C", dir, "-tag", "sep6"}); code == exitOK {
+		t.Fatal("runBaseline succeeded despite an occupied frozen-store path, want failure")
+	}
+
+	if br, err := gitx.CurrentBranch(dir); err != nil {
+		t.Fatal(err)
+	} else if br != original {
+		t.Errorf("branch = %q after failed baseline, want back on %q", br, original)
+	}
+	if exists, err := gitx.BranchExists(dir, "autoresearch-go/sep6"); err != nil {
+		t.Fatal(err)
+	} else if exists {
+		t.Error("autoresearch-go/sep6 still exists after a failed baseline, want it deleted")
+	}
+}

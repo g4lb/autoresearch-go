@@ -29,8 +29,8 @@ func TestInitWritesConfigAndProgram(t *testing.T) {
 
 func TestInitAppendsGitignoreWithoutDuplicating(t *testing.T) {
 	dir := copyDemoRepo(t)
-	// Pre-seed one of the three entries; init must not duplicate it, and
-	// must still add the other two.
+	// Pre-seed one of the four entries; init must not duplicate it, and
+	// must still add the other three.
 	giPath := filepath.Join(dir, ".gitignore")
 	if err := os.WriteFile(giPath, []byte("results.tsv\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -45,10 +45,28 @@ func TestInitAppendsGitignoreWithoutDuplicating(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(b)
-	for _, want := range []string{".autoresearch/", "results.tsv", "run.log"} {
+	for _, want := range []string{".autoresearch/*", "!.autoresearch/config.yaml", "results.tsv", "run.log"} {
 		if strings.Count(content, want) != 1 {
 			t.Errorf(".gitignore contains %q %d times, want exactly 1\n%s", want, strings.Count(content, want), content)
 		}
+	}
+}
+
+func TestInitTracksConfigButIgnoresOtherHarnessOutput(t *testing.T) {
+	// .autoresearch/ now holds only config.yaml, which humans own and want
+	// version-controlled — the opposite of everything else the harness
+	// writes there (e.g. Task 16's profile output). init's .gitignore must
+	// reflect exactly that split.
+	dir := copyDemoRepo(t)
+	if code := runInit([]string{"-C", dir}); code != exitOK {
+		t.Fatalf("runInit = %d, want %d", code, exitOK)
+	}
+
+	if gitIsIgnored(t, dir, ".autoresearch/config.yaml") {
+		t.Error(".autoresearch/config.yaml is ignored, want it tracked")
+	}
+	if !gitIsIgnored(t, dir, ".autoresearch/profiles/cpu.out") {
+		t.Error(".autoresearch/profiles/cpu.out is not ignored, want harness output under .autoresearch/ ignored")
 	}
 }
 

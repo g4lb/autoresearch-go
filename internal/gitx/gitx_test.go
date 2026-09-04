@@ -66,6 +66,35 @@ func TestBranchLifecycle(t *testing.T) {
 	}
 }
 
+func TestCheckoutAndDeleteBranch(t *testing.T) {
+	dir := repo(t)
+	original, err := CurrentBranch(dir)
+	if err != nil {
+		t.Fatalf("CurrentBranch: %v", err)
+	}
+
+	if err := CreateBranch(dir, "autoresearch-go/sep4"); err != nil {
+		t.Fatalf("CreateBranch: %v", err)
+	}
+	if br, _ := CurrentBranch(dir); br != "autoresearch-go/sep4" {
+		t.Fatalf("CurrentBranch = %q, want autoresearch-go/sep4", br)
+	}
+
+	if err := Checkout(dir, original); err != nil {
+		t.Fatalf("Checkout: %v", err)
+	}
+	if br, _ := CurrentBranch(dir); br != original {
+		t.Fatalf("CurrentBranch = %q after Checkout, want %q", br, original)
+	}
+
+	if err := DeleteBranch(dir, "autoresearch-go/sep4"); err != nil {
+		t.Fatalf("DeleteBranch: %v", err)
+	}
+	if ok, _ := BranchExists(dir, "autoresearch-go/sep4"); ok {
+		t.Error("autoresearch-go/sep4 still exists after DeleteBranch")
+	}
+}
+
 func TestIsCleanAndChangedSince(t *testing.T) {
 	dir := repo(t)
 	base, _ := HeadCommit(dir)
