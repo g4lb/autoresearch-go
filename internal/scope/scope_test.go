@@ -18,6 +18,8 @@ func TestMatch(t *testing.T) {
 		{"no patterns matches nothing", nil, "a.go", false},
 		{"prefix must be a path boundary", []string{"./internal/..."}, "internalfoo/a.go", false},
 		{"patterns without leading dot slash", []string{"internal/..."}, "internal/a.go", true},
+		{"empty pattern matches nothing (a.go)", []string{""}, "a.go", false},
+		{"empty pattern matches nothing (go.mod)", []string{""}, "go.mod", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

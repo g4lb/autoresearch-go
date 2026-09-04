@@ -16,11 +16,18 @@ type Matcher struct {
 	rules []rule
 }
 
-// New compiles patterns such as "./...", "./internal/..." or "./pkg".
+// New compiles patterns such as "./...", "./internal/..." or "./pkg". An
+// empty or whitespace-only pattern is skipped rather than treated as the
+// repository root, so a blank entry (a stray empty item in a config list,
+// say) matches nothing instead of silently granting root-level access.
 func New(patterns []string) *Matcher {
 	m := &Matcher{}
-	for _, p := range patterns {
-		p = path.Clean(strings.TrimPrefix(strings.TrimSpace(p), "./"))
+	for _, raw := range patterns {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		p := path.Clean(strings.TrimPrefix(trimmed, "./"))
 		recursive := false
 		if p == "..." {
 			p, recursive = "", true

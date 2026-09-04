@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -73,6 +74,11 @@ func (c Config) Validate() error {
 	}
 	if len(c.Scope) == 0 {
 		return errors.New("scope must list at least one path pattern")
+	}
+	for _, s := range c.Scope {
+		if strings.TrimSpace(s) == "" {
+			return errors.New("scope must not contain an empty or whitespace-only entry")
+		}
 	}
 	if _, err := time.ParseDuration(c.Benchtime); err != nil {
 		return fmt.Errorf("benchtime %q is not a duration: %w", c.Benchtime, err)

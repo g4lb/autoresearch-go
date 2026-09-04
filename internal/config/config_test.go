@@ -44,6 +44,7 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		{"count-form benchtime", func(c *Config) { c.Benchtime = "100x" }},
 		{"bad timeout", func(c *Config) { c.Timeout = "banana" }},
 		{"empty scope", func(c *Config) { c.Scope = nil }},
+		{"empty scope entry", func(c *Config) { c.Scope = []string{"./...", ""} }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -98,6 +98,26 @@ func TestIsCleanAndChangedSince(t *testing.T) {
 	}
 }
 
+func TestChangedSinceNonASCII(t *testing.T) {
+	dir := repo(t)
+	base, _ := HeadCommit(dir)
+
+	if err := os.MkdirAll(filepath.Join(dir, "internal"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "internal", "café.go"), []byte("package internal\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := ChangedSince(dir, base)
+	if err != nil {
+		t.Fatalf("ChangedSince: %v", err)
+	}
+	if len(changed) != 1 || changed[0] != "internal/café.go" {
+		t.Fatalf("ChangedSince = %v, want [\"internal/café.go\"] unquoted and unescaped", changed)
+	}
+}
+
 func TestWorktreeLifecycle(t *testing.T) {
 	dir := repo(t)
 	commit, _ := HeadCommit(dir)
