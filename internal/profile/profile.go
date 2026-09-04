@@ -3,6 +3,7 @@
 package profile
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -23,18 +24,25 @@ type Report struct {
 // Capture runs the declared benchmarks under CPU and memory profiling,
 // returning the top 15 functions from each profile as text output.
 // dir is the directory to run benchmarks in, pattern is the benchmark pattern
-// (e.g. "Benchmark.*"), benchtime is passed to `go test -benchtime`, and
-// timeout bounds the entire operation.
-func Capture(ctx context.Context, dir, pattern, benchtime string, timeout time.Duration) (*Report, error) {
-	// Create a temporary directory for the profiling outputs and binary.
+// (e.g. "Benchmark.*"), benchtime is passed to `go test -benchtime`, dest is
+// the directory where profile files are written (.autoresearch/profiles or similar),
+// and timeout bounds the entire operation.
+func Capture(ctx context.Context, dir, pattern, benchtime, dest string, timeout time.Duration) (*Report, error) {
+	// Create a temporary directory for the compiled test binary only.
 	tmpDir, err := os.MkdirTemp("", "autoresearch-profile-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	cpuProfilePath := filepath.Join(tmpDir, "cpu.out")
-	memProfilePath := filepath.Join(tmpDir, "mem.out")
+	// Ensure destination directory exists.
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return nil, fmt.Errorf("create destination dir: %w", err)
+	}
+
+	// Profile files go to their final destination, not to the temp dir.
+	cpuProfilePath := filepath.Join(dest, "cpu.out")
+	memProfilePath := filepath.Join(dest, "mem.out")
 	binaryPath := filepath.Join(tmpDir, "bench.test")
 
 	// Create a context with the specified timeout.
@@ -44,7 +52,8 @@ func Capture(ctx context.Context, dir, pattern, benchtime string, timeout time.D
 		defer cancel()
 	}
 
-	// Run go test with profiling flags.
+	// Run go test with profiling flags, capturing output to avoid flooding context.
+	var stdout, stderr bytes.Buffer
 	testCmd := exec.CommandContext(ctx, "go", "test",
 		"-run", "^$",
 		"-bench", pattern,
@@ -56,11 +65,11 @@ func Capture(ctx context.Context, dir, pattern, benchtime string, timeout time.D
 		"./...",
 	)
 	testCmd.Dir = dir
-	testCmd.Stdout = os.Stdout
-	testCmd.Stderr = os.Stderr
+	testCmd.Stdout = &stdout
+	testCmd.Stderr = &stderr
 
 	if err := testCmd.Run(); err != nil {
-		return nil, fmt.Errorf("run benchmarks: %w", err)
+		return nil, fmt.Errorf("run benchmarks: %w\n%s", err, stderr.String())
 	}
 
 	// Extract CPU profile using pprof.
@@ -75,9 +84,6 @@ func Capture(ctx context.Context, dir, pattern, benchtime string, timeout time.D
 		return nil, fmt.Errorf("extract memory profile: %w", err)
 	}
 
-	// Copy the profile files to the actual output location.
-	// For now, we'll just use the tmpDir paths.
-	// The caller can decide where to put them.
 	report := &Report{
 		CPUTop:  cpuTop,
 		MemTop:  memTop,

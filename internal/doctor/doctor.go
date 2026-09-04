@@ -8,15 +8,19 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
+
+	"github.com/g4lb/autoresearch-go/internal/gitx"
 )
 
 // Severity indicates how bad a finding is.
 type Severity int
 
 const (
-	SeverityOK   Severity = 0
-	SeverityWarn Severity = 1
-	SeverityFail Severity = 2
+	SeverityOK            Severity = 0
+	SeverityWarn          Severity = 1
+	SeverityFail          Severity = 2
+	SeverityNotApplicable Severity = -1 // Check doesn't apply to this platform/environment
 )
 
 // Finding is one check's result.
@@ -27,7 +31,8 @@ type Finding struct {
 }
 
 // Check runs all diagnostic checks and returns the findings.
-func Check() []Finding {
+// dir is the repository root or a directory inside it.
+func Check(dir string) []Finding {
 	var findings []Finding
 
 	// Check go version.
@@ -35,6 +40,9 @@ func Check() []Finding {
 
 	// Check git.
 	findings = append(findings, checkGit())
+
+	// Check if directory is a git repository.
+	findings = append(findings, checkGitRepo(dir))
 
 	// Check CPU count and GOMAXPROCS.
 	findings = append(findings, checkCPU())
@@ -51,7 +59,7 @@ func Check() []Finding {
 	}
 
 	// Check disk space.
-	findings = append(findings, checkDisk())
+	findings = append(findings, checkDisk(dir))
 
 	return findings
 }
@@ -124,6 +132,24 @@ func checkGit() Finding {
 	}
 }
 
+// checkGitRepo verifies the working tree is a git repository.
+func checkGitRepo(dir string) Finding {
+	_, err := gitx.Root(dir)
+	if err != nil {
+		return Finding{
+			Name:     "git repo",
+			Detail:   fmt.Sprintf("not a git repository: %v", err),
+			Severity: SeverityFail,
+		}
+	}
+
+	return Finding{
+		Name:     "git repo",
+		Detail:   "working tree is a git repository",
+		Severity: SeverityOK,
+	}
+}
+
 // checkCPU reports the number of logical CPUs and warns if GOMAXPROCS is not pinned.
 func checkCPU() Finding {
 	numCPU := runtime.NumCPU()
@@ -154,15 +180,21 @@ func checkCPU() Finding {
 
 // checkLoadAverage checks the 1-minute load average where available.
 func checkLoadAverage() Finding {
-	// Try to read from /proc/loadavg (Linux) or use similar mechanisms.
-	// For now, we'll do a simple check on Unix systems.
-
+	// Try to read from /proc/loadavg (Linux only).
 	content, err := os.ReadFile("/proc/loadavg")
 	if err != nil {
-		// File doesn't exist; report unknown.
+		if os.IsNotExist(err) {
+			// File doesn't exist; on macOS or Windows, load average is not readily available.
+			return Finding{
+				Name:     "load",
+				Detail:   fmt.Sprintf("1-minute load average: not checked (not available on %s)", runtime.GOOS),
+				Severity: SeverityNotApplicable,
+			}
+		}
+		// Some other error reading the file.
 		return Finding{
 			Name:     "load",
-			Detail:   "load average: unknown (file not readable)",
+			Detail:   fmt.Sprintf("1-minute load average: unknown (error reading /proc/loadavg: %v)", err),
 			Severity: SeverityOK,
 		}
 	}
@@ -171,7 +203,7 @@ func checkLoadAverage() Finding {
 	if len(parts) < 1 {
 		return Finding{
 			Name:     "load",
-			Detail:   "load average: unknown (parse error)",
+			Detail:   "1-minute load average: unknown (parse error)",
 			Severity: SeverityOK,
 		}
 	}
@@ -181,7 +213,7 @@ func checkLoadAverage() Finding {
 	if err != nil {
 		return Finding{
 			Name:     "load",
-			Detail:   "load average: unknown (parse error)",
+			Detail:   "1-minute load average: unknown (parse error)",
 			Severity: SeverityOK,
 		}
 	}
@@ -244,14 +276,32 @@ func checkLinux() Finding {
 	}
 }
 
-// checkDisk checks available disk space.
-func checkDisk() Finding {
-	// We can't easily get disk space without cgo or platform-specific code.
-	// For now, return a simple OK.
+// checkDisk checks available disk space in the given directory.
+func checkDisk(dir string) Finding {
+	// Use syscall.Statfs to check disk space.
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(dir, &stat); err != nil {
+		return Finding{
+			Name:     "disk",
+			Detail:   fmt.Sprintf("available disk space: unknown (error: %v)", err),
+			Severity: SeverityOK,
+		}
+	}
+
+	// Available space = available blocks * block size
+	availableBytes := uint64(stat.Bavail) * uint64(stat.Bsize)
+	availableGB := float64(availableBytes) / (1024.0 * 1024.0 * 1024.0)
+
+	const minGBWarn = 2.0
+	severity := SeverityOK
+	if availableGB < minGBWarn {
+		severity = SeverityWarn
+	}
+
 	return Finding{
 		Name:     "disk",
-		Detail:   "available disk space: checkable (implement statvfs for full check)",
-		Severity: SeverityOK,
+		Detail:   fmt.Sprintf("available disk space: %.1f GB", availableGB),
+		Severity: severity,
 	}
 }
 

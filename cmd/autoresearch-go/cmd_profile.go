@@ -35,13 +35,6 @@ func runProfile(args []string) int {
 		return exitUsage
 	}
 
-	// Create profiles directory.
-	profileDir := filepath.Join(root, ".autoresearch", "profiles")
-	if err := os.MkdirAll(profileDir, 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go profile: %v\n", err)
-		return exitUsage
-	}
-
 	// Parse timeout.
 	timeout, err := cfg.TimeoutDuration()
 	if err != nil {
@@ -49,27 +42,17 @@ func runProfile(args []string) int {
 		return exitUsage
 	}
 
-	// Run profiling.
+	// Profile destination directory.
+	profileDir := filepath.Join(root, ".autoresearch", "profiles")
+
+	// Run profiling. Capture writes directly to profileDir.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	benchPattern := "Benchmark" + benchmarkPattern(cfg.Benchmarks)
-	report, err := profile.Capture(ctx, root, benchPattern, cfg.Benchtime, timeout)
+	report, err := profile.Capture(ctx, root, benchPattern, cfg.Benchtime, profileDir, timeout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "autoresearch-go profile: %v\n", err)
-		return exitUsage
-	}
-
-	// Copy profiles to output directory and update paths.
-	cpuOutPath := filepath.Join(profileDir, "cpu.out")
-	memOutPath := filepath.Join(profileDir, "mem.out")
-
-	if err := copyProfileFile(report.CPUPath, cpuOutPath); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go profile: copy CPU profile: %v\n", err)
-		return exitUsage
-	}
-	if err := copyProfileFile(report.MemPath, memOutPath); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go profile: copy memory profile: %v\n", err)
 		return exitUsage
 	}
 
@@ -93,13 +76,4 @@ func benchmarkPattern(names []string) string {
 		return ".*"
 	}
 	return ".*"
-}
-
-// copyProfileFile copies src to dst.
-func copyProfileFile(src, dst string) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, data, 0o644)
 }

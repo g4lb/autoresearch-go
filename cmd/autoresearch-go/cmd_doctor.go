@@ -12,11 +12,12 @@ import (
 func runDoctor(args []string) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	dir := fs.String("C", ".", "repository root (or a directory inside it)")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
 
-	findings := doctor.Check()
+	findings := doctor.Check(*dir)
 
 	// Print findings.
 	maxSeverity := doctor.SeverityOK
@@ -29,11 +30,13 @@ func runDoctor(args []string) int {
 			emoji = "⚠"
 		case doctor.SeverityFail:
 			emoji = "✗"
+		case doctor.SeverityNotApplicable:
+			emoji = "–"
 		}
 
 		fmt.Printf("%s %s: %s\n", emoji, f.Name, f.Detail)
 
-		if f.Severity > maxSeverity {
+		if f.Severity > maxSeverity && f.Severity != doctor.SeverityNotApplicable {
 			maxSeverity = f.Severity
 		}
 	}

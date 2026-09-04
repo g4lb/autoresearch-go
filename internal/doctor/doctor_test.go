@@ -17,7 +17,7 @@ func TestSeverityOrdering(t *testing.T) {
 // TestCheckReturnsBasicFindings verifies that Check returns at least the
 // go and git findings without panicking.
 func TestCheckReturnsBasicFindings(t *testing.T) {
-	findings := Check()
+	findings := Check(".")
 	if len(findings) == 0 {
 		t.Error("Check returned no findings")
 	}
@@ -44,5 +44,5 @@ func TestCheckDoesNotPanic(t *testing.T) {
 			t.Fatalf("Check panicked: %v", r)
 		}
 	}()
-	_ = Check()
+	_ = Check(".")
 }
