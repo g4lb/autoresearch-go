@@ -2,7 +2,3 @@
 results.tsv
 run.log
 /autoresearch-go
-
-# Local development planning docs (superpowers skill output) — never shipped.
-.superpowers/
-docs/superpowers/
