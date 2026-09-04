@@ -10,7 +10,6 @@ func notImplemented(name string) int {
 	return exitUsage
 }
 
-func runInit(args []string) int     { return notImplemented("init") }
 func runDoctor(args []string) int   { return notImplemented("doctor") }
 func runBaseline(args []string) int { return notImplemented("baseline") }
 func runProfile(args []string) int  { return notImplemented("profile") }
