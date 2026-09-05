@@ -11,12 +11,20 @@ import (
 
 // TestReportComputesCumulativeSpeedupCorrectly covers the cumulative-speedup
 // arithmetic across the shapes that matter: no kept rows, one kept row,
-// several kept rows (where the correct answer is the LATEST kept score, not
-// the product of all of them), a hand-edited score above 1.0, and the
-// real-world run against github.com/dustin/go-humanize that exposed the bug
-// — kept scores 0.7936, 0.5917, 0.5981 in that order previously produced a
-// wildly wrong "71.9%" (0.9 * ... as a product-of-all-kept miscalculation)
-// instead of the correct ~40.2% (the last kept score, 0.5981).
+// several kept rows (where the correct answer is the PRODUCT of every kept
+// score, not the latest one alone), and a hand-edited score above 1.0.
+//
+// The product semantics depend on the measurement baseline advancing after
+// every KEEP (see internal/pipeline's advanceMeasurementBaseline): each
+// `eval` measures a candidate against the immediately preceding accepted
+// state, so a kept row's score reflects only ITS OWN incremental
+// contribution rather than the whole run's progress from the original
+// commit — the run-level figure has to be composed by multiplying them,
+// the same way compounding successive percentage changes works. This is the
+// reverse of the (now historical) fixed-baseline design, under which every
+// kept score was already cumulative on its own and the latest one alone was
+// the right answer. If the measurement baseline ever stops advancing, this
+// test (and the production code) must revert together.
 func TestReportComputesCumulativeSpeedupCorrectly(t *testing.T) {
 	// scoredRow is a shorthand for one logged row; status defaults to "keep"
 	// when empty, since most cases below only care about kept rows.
@@ -49,26 +57,28 @@ func TestReportComputesCumulativeSpeedupCorrectly(t *testing.T) {
 			want: "20.0%",
 		},
 		{
-			name: "two kept experiments: latest score wins, not the product",
+			name: "two kept experiments: the product of both scores, not the latest alone",
 			rows: kept(0.9, 0.8),
-			// Old (wrong) product semantics: 0.9 * 0.8 = 0.72 -> "28.0%".
-			// Correct semantics: latest kept score is 0.8 -> "20.0%".
-			want: "20.0%",
+			// Each score is its own experiment's incremental contribution
+			// (the measurement baseline advanced between them), so they
+			// compose multiplicatively: 0.9 * 0.8 = 0.72 -> (1-0.72)*100 = 28.0%.
+			// Taking only the latest kept score (0.8 -> "20.0%") would
+			// under-report the second experiment's real, additional
+			// contribution on top of the first.
+			want: "28.0%",
 		},
 		{
 			name: "kept score above 1.0 (e.g. a hand-edited log)",
 			rows: kept(1.1),
+			// A single kept row: product of one term is that term.
 			// (1 - 1.1) * 100 = -10.0%: a regression, reported honestly as negative.
 			want: "-10.0%",
 		},
 		{
-			name: "real run against dustin/go-humanize",
-			// Third row re-measures the same (unchanged) tree as the second;
-			// under the old product semantics this compounded into a further
-			// "improvement" on top of itself.
+			name: "three kept experiments, each a genuine incremental improvement",
 			rows: kept(0.7936, 0.5917, 0.5981),
-			// Latest kept score is 0.5981: (1 - 0.5981) * 100 = 40.19%.
-			want: "40.2%",
+			// 0.7936 * 0.5917 * 0.5981 = 0.280852...  (1 - that) * 100 = 71.9%.
+			want: "71.9%",
 		},
 	}
 

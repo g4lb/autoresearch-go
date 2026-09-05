@@ -36,6 +36,9 @@ func TestBaselineCreatesBranchAndFreezesTests(t *testing.T) {
 	if b.Pattern != "^(BenchmarkCountWords)$" {
 		t.Errorf("Pattern = %q", b.Pattern)
 	}
+	if b.MeasureCommit != b.Commit {
+		t.Errorf("MeasureCommit = %q, want it to start equal to Commit %q", b.MeasureCommit, b.Commit)
+	}
 	m, err := freeze.LoadManifest(filepath.Join(stateDir, freeze.ManifestPath))
 	if err != nil {
 		t.Fatalf("manifest: %v", err)

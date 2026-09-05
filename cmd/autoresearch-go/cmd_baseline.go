@@ -224,13 +224,16 @@ func finishBaseline(root, stateDir, configPath, resultsPath, branch, tag string,
 	}
 
 	b := state.Baseline{
-		Tag:          tag,
-		Branch:       branch,
-		Commit:       commit,
-		CreatedAt:    time.Now().UTC(),
-		Benchmarks:   cfg.Benchmarks,
-		Pattern:      state.BenchPattern(cfg.Benchmarks),
-		ConfigSHA256: configHash,
+		Tag:    tag,
+		Branch: branch,
+		Commit: commit,
+		// MeasureCommit starts equal to the frozen anchor; internal/pipeline
+		// advances it after every KEEP. See state.Baseline's doc comment.
+		MeasureCommit: commit,
+		CreatedAt:     time.Now().UTC(),
+		Benchmarks:    cfg.Benchmarks,
+		Pattern:       state.BenchPattern(cfg.Benchmarks),
+		ConfigSHA256:  configHash,
 	}
 	if err := b.Save(filepath.Join(stateDir, state.BaselineFile)); err != nil {
 		return "", 0, fmt.Errorf("save baseline record: %w", err)

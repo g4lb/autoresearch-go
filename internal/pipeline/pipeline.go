@@ -49,7 +49,10 @@ type Options struct {
 	StateDir string
 	// Cfg is the run configuration loaded from the in-repo config file.
 	Cfg config.Config
-	// Base is the fixed reference point recorded by `baseline`.
+	// Base is the reference point recorded by `baseline`. Eval may mutate
+	// Base.MeasureCommit and persist the change to disk as a side effect of
+	// a KEEP verdict — see advanceMeasurementBaseline. Base.Commit, the
+	// frozen anchor, is only ever read, never written.
 	Base *state.Baseline
 	// Log receives subprocess output (build/vet/test/bench) and progress
 	// notes such as which frozen files were restored. May be nil.
@@ -87,6 +90,19 @@ func Eval(ctx context.Context, o Options) (verdict.Result, *Measurements, error)
 
 	// 1. Scope. Checked before anything is restored or built, so an
 	//    out-of-scope edit is reported as itself rather than as a build error.
+	//
+	// Deliberately diffs against o.Base.Commit — the FROZEN, never-advancing
+	// anchor — and NOT o.Base.MeasureCommit, which moves after every KEEP.
+	// Anchoring the scope gate to the run's true starting point means it
+	// keeps re-validating the FULL accumulated diff on every single eval,
+	// rather than trusting that anything already banked as a KEEP must have
+	// been in scope. Anchoring it to the advancing MeasureCommit instead
+	// would give an out-of-scope edit exactly one eval in which to be
+	// caught: once past that single check it would become part of the
+	// "already accepted" state and would never be looked at again — the
+	// same class of moving-target bypass state.Baseline's doc comment
+	// warns about for the measurement side. See state.Baseline for the
+	// full reasoning.
 	changed, err := gitx.ChangedSince(o.Root, o.Base.Commit)
 	if err != nil {
 		return verdict.Result{}, nil, err
@@ -211,7 +227,14 @@ func Eval(ctx context.Context, o Options) (verdict.Result, *Measurements, error)
 	// BASELINE itself slow, after which every candidate "improves" and every
 	// experiment returns KEEP without optimizing anything. Detect that by
 	// checking the pinned worktree's HEAD still matches the commit recorded
-	// at baseline time.
+	// as the current measurement anchor.
+	//
+	// Compares against o.Base.MeasureCommit, not o.Base.Commit: MeasureCommit
+	// is re-pointed to the newly kept commit (and the worktree moved to
+	// match) after every KEEP — see advanceMeasurementBaseline below — so
+	// comparing against the frozen o.Base.Commit here would fire spuriously
+	// on the very next eval after any KEEP, once the worktree and the
+	// original anchor have legitimately diverged.
 	//
 	// This is a DETECTION, not a prevention, and only a partial one: the
 	// state directory lives outside the repo, but the agent runs as the same
@@ -221,20 +244,20 @@ func Eval(ctx context.Context, o Options) (verdict.Result, *Measurements, error)
 	// WITHOUT moving HEAD (e.g. `git commit --amend` back onto the same
 	// hash after editing, or just dirtying the tree without committing) is
 	// not caught here at all. Nor is an attacker who also rewrites
-	// baseline.json's Commit field to match a genuinely different HEAD they
-	// moved the worktree to — that rewrites the very value this check
-	// compares against. Treat this as catching accidental clobbering and a
-	// careless tamper, not as an airtight guarantee.
+	// baseline.json's MeasureCommit field to match a genuinely different
+	// HEAD they moved the worktree to — that rewrites the very value this
+	// check compares against. Treat this as catching accidental clobbering
+	// and a careless tamper, not as an airtight guarantee.
 	worktreeDir := filepath.Join(o.StateDir, state.WorktreeName)
 	worktreeHead, err := gitx.HeadCommit(worktreeDir)
 	if err != nil {
 		return verdict.Result{}, nil, err
 	}
-	if worktreeHead != o.Base.Commit {
+	if worktreeHead != o.Base.MeasureCommit {
 		return verdict.Gate(verdict.StatusFail, verdict.ReasonBaselineTampered,
-			fmt.Sprintf("pinned baseline worktree HEAD is %s but the recorded baseline commit is %s — "+
+			fmt.Sprintf("pinned baseline worktree HEAD is %s but the recorded measurement commit is %s — "+
 				"the worktree no longer matches the baseline and this run's measurements cannot be trusted. "+
-				"Start a fresh run with 'autoresearch-go baseline'.", worktreeHead, o.Base.Commit)), nil, nil
+				"Start a fresh run with 'autoresearch-go baseline'.", worktreeHead, o.Base.MeasureCommit)), nil, nil
 	}
 
 	// 6. Measure, interleaved against the pinned baseline worktree.
@@ -278,11 +301,60 @@ func Eval(ctx context.Context, o Options) (verdict.Result, *Measurements, error)
 		}
 	}
 
-	return verdict.Decide(verdict.Input{
+	result := verdict.Decide(verdict.Input{
 		Deltas:        timeDeltas,
 		Score:         score,
 		MaxRegressPct: o.Cfg.MaxRegressPct,
-	}), &Measurements{Time: timeDeltas, Allocs: allocsDeltas}, nil
+	})
+
+	// 8. Advance the measurement baseline on KEEP. Without this, every
+	// experiment after the first kept one is measured against the run's
+	// ORIGINAL commit forever, so a later no-op change that merely fails to
+	// regress an EARLIER improvement still banks as KEEP. Re-pointing the
+	// pinned worktree (and MeasureCommit) to the newly kept commit makes the
+	// next eval answer "did THIS change help", not "is the tree still
+	// better than when the run started".
+	if result.Status == verdict.StatusKeep {
+		if err := advanceMeasurementBaseline(o, worktreeDir); err != nil {
+			return verdict.Result{}, nil, err
+		}
+	}
+
+	return result, &Measurements{Time: timeDeltas, Allocs: allocsDeltas}, nil
+}
+
+// advanceMeasurementBaseline re-points the pinned baseline worktree at the
+// candidate's own commit and persists that commit as the new
+// state.Baseline.MeasureCommit, after a KEEP. See state.Baseline's doc
+// comment for why MeasureCommit (advancing) and Commit (frozen) are two
+// separate fields.
+//
+// A failure here is returned as a Go error, not folded into the verdict:
+// per Eval's contract, a non-nil error means the harness itself
+// malfunctioned, and every caller already treats that as a reason to stop
+// rather than record a row and continue — which is exactly right here.
+// Continuing to run further experiments against a worktree that no longer
+// agrees with the recorded MeasureCommit (or a MeasureCommit that no longer
+// agrees with the worktree) would silently corrupt every subsequent
+// measurement in the run, which is precisely the class of bug this advance
+// exists to fix in the first place. Should this call fail after the
+// worktree has already moved but before the new MeasureCommit is
+// persisted, the NEXT eval's worktree-integrity check (step 5b) will catch
+// the resulting mismatch and fail loudly rather than measure against it
+// silently.
+func advanceMeasurementBaseline(o Options, worktreeDir string) error {
+	newCommit, err := gitx.HeadCommit(o.Root)
+	if err != nil {
+		return fmt.Errorf("advance measurement baseline: read candidate HEAD: %w", err)
+	}
+	if err := gitx.CheckoutDetached(worktreeDir, newCommit); err != nil {
+		return fmt.Errorf("advance measurement baseline: re-point pinned worktree to %s: %w", newCommit, err)
+	}
+	o.Base.MeasureCommit = newCommit
+	if err := o.Base.Save(filepath.Join(o.StateDir, state.BaselineFile)); err != nil {
+		return fmt.Errorf("advance measurement baseline: persist new measurement commit %s: %w", newCommit, err)
+	}
+	return nil
 }
 
 // benchEnv returns the environment for benchmark subprocesses: the

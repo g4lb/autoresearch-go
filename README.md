@@ -74,8 +74,8 @@ It runs until you stop it. Each experiment is one commit, one verdict, one row i
 | `doctor` | Checks whether this machine can measure reliably (CPU frequency scaling, thermal throttling risk, disk space) and prints its findings. Informational — always exits 0. |
 | `baseline -tag <tag>` | Creates the run branch `autoresearch-go/<tag>`, freezes every in-scope `_test.go` file, and pins a detached worktree at the baseline commit. Refuses a dirty tree and a reused tag. |
 | `profile` | Runs the declared benchmarks under Go's CPU and memory profilers and prints the top hot spots — real `pprof` data on where time and allocations actually go, rather than an agent guessing from reading source. Profiles only the package(s) that declare the benchmarks in scope (the go tool refuses `-cpuprofile`/`-memprofile` against `./...` once more than one package matches). When they're all in one package — the common case — writes `.autoresearch/profiles/{cpu,mem}.out`, openable with `go tool pprof -http=: <file>`; when benchmarks span multiple packages, profiles each in turn and writes `.autoresearch/profiles/<package>/{cpu,mem}.out`, with output grouped and labelled by package. |
-| `eval` | Runs one experiment: gates (scope, config integrity, restore, build, vet, test), measures the candidate against the pinned baseline, scores it, appends a `results.tsv` row, and exits `0`/`1`/`2`/`3` for KEEP/DISCARD/FAIL/CRASH. |
-| `report` | Summarizes `results.tsv`: counts by status, cumulative speedup across kept experiments, and the largest individual wins. |
+| `eval` | Runs one experiment: gates (scope, config integrity, restore, build, vet, test), measures the candidate against the pinned baseline worktree, scores it, appends a `results.tsv` row, exits `0`/`1`/`2`/`3` for KEEP/DISCARD/FAIL/CRASH, and on `KEEP` re-points the pinned worktree at the candidate's commit so the next `eval` measures against it (see [Scoring](#scoring)). |
+| `report` | Summarizes `results.tsv`: counts by status, the cumulative speedup as the product of every kept experiment's score, and the largest individual wins. |
 
 Every command accepts `-C <dir>` to run against a repository other than the current
 directory, rather than changing the process's working directory — safer under
@@ -197,9 +197,10 @@ statistically significant, with no benchmark regressing — so the harness retur
 VERDICT: KEEP
 ```
 
-The commit stays and the branch advances. Had the change been slower, broken a test, or
-been indistinguishable from noise, the harness would have returned `DISCARD` or `FAIL`
-and the agent would `git reset --hard`.
+The commit stays, the branch advances, and the measurement baseline advances with it —
+the *next* experiment is measured against this commit, not against the original one. Had
+the change been slower, broken a test, or been indistinguishable from noise, the harness
+would have returned `DISCARD` or `FAIL` and the agent would `git reset --hard`.
 
 ## What the harness enforces
 
@@ -216,7 +217,8 @@ An agent optimizing your code can "win" by cheating. Each route is closed:
 | Speed up A by wrecking B | any significant regression over 5 % rejects the change outright |
 | Swap or edit a dependency (`go.mod`/`go.sum`) | rejected outright regardless of `scope` — a dependency change is a human decision, not an autonomous one, and would change what is being measured rather than how fast it runs |
 | Loosen the rules mid-run (raise `max_regress_pct`, narrow `scope`, drop a benchmark) | `.autoresearch/config.yaml` is hashed at baseline; any change to it fails the run with a config-hash mismatch |
-| Compare against a stale baseline | the baseline is **re-measured every run**, interleaved with the candidate |
+| Compare against a stale baseline | the measurement baseline is **re-measured every run**, interleaved with the candidate |
+| Coast to `KEEP` on an earlier improvement doing nothing new | the measurement baseline **advances to the newly kept commit after every `KEEP`** (see [Scoring](#scoring)), so a later no-op is compared against what was just kept, not against where the run started |
 
 That last one matters more than it looks. Comparing a candidate measured now against a
 baseline measured an hour ago on a cooler CPU attributes thermal drift to your code
@@ -233,6 +235,23 @@ score = geomean(new_ns / base_ns)   across the declared benchmark set
 `KEEP` requires **all** of: score < 1, at least one statistically significant
 improvement, and no significant regression beyond `max_regress_pct` (default 5 %).
 `allocs/op` and `B/op` are measured and shown to the agent as hints, but never scored.
+
+`base_ns` is **not** fixed for the whole run. `baseline` pins two things that are
+kept deliberately separate: a FROZEN commit that the frozen tests and the scope
+gate always compare against (so an agent cannot expand what it may edit by
+banking experiments), and a MEASUREMENT commit — what `base_ns` is actually
+measured against — that starts equal to the frozen one and **advances to the
+candidate's own commit after every `KEEP`**. So `score` always answers "did
+*this* experiment help, compared to the last thing that was kept," never "is
+the tree better than when the run started." Without this, once one real
+improvement was kept, every later experiment — however useless — kept
+comparing against that same stale starting point and a no-op could coast to
+`KEEP` on an earlier win it did not contribute to.
+
+One consequence: each kept `score` is now only that experiment's own
+incremental contribution, so `autoresearch-go report`'s cumulative speedup
+is the **product** of every kept score, not the latest one alone —
+successive real improvements compound the way percentage changes do.
 
 ## Limitations
 

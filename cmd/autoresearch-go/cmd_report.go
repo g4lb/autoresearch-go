@@ -59,46 +59,49 @@ func printReportSummary(rows []results.Row) {
 		}
 	}
 
-	// Cumulative improvement is the score of the MOST RECENT kept experiment —
-	// not a product of every kept score. Every `eval` measures the candidate
-	// against the same fixed baseline (the pinned worktree at the baseline
-	// commit, which never changes during a run), so each kept score is
-	// already cumulative: it already reflects every improvement kept before
-	// it. Multiplying successive kept scores therefore double-counts prior
-	// gains and compounds re-measurements of an unchanged tree as if they
-	// were further improvements. The latest kept score alone is the true
-	// state of the tree relative to baseline.
-	var lastKeptScore float64
+	// Cumulative improvement is the PRODUCT of every kept score, not the
+	// latest kept score alone.
+	//
+	// This depends entirely on the measurement baseline advancing after
+	// every KEEP (see internal/pipeline's advanceMeasurementBaseline and
+	// state.Baseline.MeasureCommit): each `eval` measures the candidate
+	// against the immediately preceding ACCEPTED state, not against the
+	// run's original commit. That means every kept row's score already
+	// reflects ONLY that experiment's own incremental contribution — it is
+	// NOT cumulative on its own — so the run-level speedup has to be
+	// composed by multiplying every kept score together, the same way
+	// compounding successive percentage changes works.
+	//
+	// If the measurement baseline ever stops advancing (reverting to a
+	// single fixed baseline for the whole run), this reasoning inverts:
+	// every kept score would once again already be cumulative on its own,
+	// and multiplying them would double-count prior gains. The two must
+	// always change together.
+	cumulativeScore := 1.0
 	haveKept := false
 	for _, r := range rows {
 		if r.Status == "keep" {
-			lastKeptScore = r.Score
+			cumulativeScore *= r.Score
 			haveKept = true
 		}
 	}
 
-	// Find top wins: rows whose score actually improved on the previous kept
-	// score. Because every eval compares against the same fixed baseline (see
-	// above), a kept row that merely re-measures an unchanged tree reports a
-	// score close to the previous kept row's — not an improvement — yet can
-	// still show a large best_bench_delta for a single noisy benchmark, which
-	// would otherwise let that re-measurement masquerade as a new win.
-	// prevScore starts at 1.0 (the baseline itself, i.e. no change) so the
-	// first kept row is judged against "no improvement yet".
+	// Largest wins: every kept row, sorted by its own best-benchmark delta.
+	// Under the advancing baseline, verdict.Decide only ever returns KEEP
+	// for a candidate that is itself a real, significant improvement over
+	// the immediately preceding accepted state (see internal/verdict), so
+	// unlike under a fixed baseline there is no "re-measurement of an
+	// unchanged tree" case to filter out here: every kept row is already a
+	// genuine win in its own right.
 	type win struct {
 		row results.Row
 		idx int
 	}
 	var keptRows []win
-	prevScore := 1.0
 	for i, r := range rows {
-		if r.Status != "keep" {
-			continue
-		}
-		if r.Score < prevScore {
+		if r.Status == "keep" {
 			keptRows = append(keptRows, win{r, i})
 		}
-		prevScore = r.Score
 	}
 	sort.Slice(keptRows, func(i, j int) bool {
 		return keptRows[i].row.BestBenchDelta < keptRows[j].row.BestBenchDelta
@@ -111,7 +114,7 @@ func printReportSummary(rows []results.Row) {
 	fmt.Printf("  failed: %d\n", failed)
 	fmt.Printf("  crashed: %d\n", crashed)
 	if haveKept {
-		improvement := (1.0 - lastKeptScore) * 100.0
+		improvement := (1.0 - cumulativeScore) * 100.0
 		fmt.Printf("\ncumulative speedup: %.1f%%\n", improvement)
 	} else {
 		fmt.Printf("\ncumulative speedup: no experiments kept\n")

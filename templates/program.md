@@ -100,6 +100,18 @@ machine-readable code (e.g. `improved`, `no_significant_improvement`,
 `regressions`, when present, lists which benchmarks tripped the regression
 guard and by how much.
 
+**What `base_ns` means changes as the run progresses.** It is NOT always the
+commit `baseline` recorded — it is whatever the harness's measurement
+baseline currently points to, and a KEEP moves that pointer to the commit
+you just kept (see the loop below). So `score` always answers "did THIS
+experiment help, compared to the last thing that was kept" — never "is the
+tree better than when the run started." Two consequences: (1) after a KEEP,
+running `eval` again with nothing new committed measures your last commit
+against itself and correctly `DISCARD`s, it is not a bug or a fluke; (2) a
+long, honest run's total progress is not any single `score` — it is the
+product of every kept `score`, which is what `autoresearch-go report`'s
+"cumulative speedup" computes for the human.
+
 ## Logging
 
 `results.tsv` is HARNESS-OWNED. `eval` appends exactly one row to it,
@@ -179,7 +191,10 @@ LOOP FOREVER:
    `description` column for this experiment — always pass it.
 6. Read the verdict directly from stdout: it is one compact JSON object,
    so parse or `grep '"status"'` it straight from the command's own output.
-7. KEEP  -> leave the commit in place, the branch advances.
+7. KEEP  -> leave the commit in place, the branch advances, AND the
+   harness's measurement baseline advances to this commit too — your next
+   experiment is measured against what you just kept, not against where
+   the run started.
    Anything else -> `git reset --hard HEAD~1`
 8. Go to 1.
 

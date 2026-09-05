@@ -126,6 +126,20 @@ func AddWorktree(repoDir, path, commit string) error {
 	return err
 }
 
+// CheckoutDetached moves an existing worktree (or any git checkout) to
+// commit, detached. Used to advance the pinned baseline worktree after a
+// KEEP: re-pointing an existing worktree with a plain checkout is simpler
+// and has less failure surface than RemoveWorktree followed by AddWorktree,
+// which re-registers the worktree in the main repository's metadata rather
+// than just moving HEAD inside the one that already exists. -f discards any
+// stray changes in the target checkout first — nothing should ever be
+// modifying the pinned baseline worktree, but checking out over a dirty
+// tree without -f would fail instead of re-pointing it.
+func CheckoutDetached(dir, commit string) error {
+	_, err := git(dir, "checkout", "-f", "--detach", commit)
+	return err
+}
+
 // RemoveWorktree deletes a worktree previously created by AddWorktree.
 //
 // It passes --force, which silently discards any uncommitted or untracked

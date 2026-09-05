@@ -103,14 +103,51 @@ const (
 	WorktreeName = "baseline-worktree"
 )
 
-// Baseline records the fixed reference point for a run.
+// Baseline records the reference point(s) for a run.
+//
+// Two distinct reference points are tracked here, deliberately kept apart:
+//
+//   - Commit is the FROZEN anchor: the commit the run started from. It is
+//     recorded once by `baseline` and must NEVER change for the life of the
+//     run. The frozen test snapshots are taken relative to it, and the scope
+//     gate's ChangedSince diffs against it (see internal/pipeline) — using a
+//     fixed anchor there means the scope gate keeps re-validating the FULL
+//     accumulated diff against the human-approved starting point on every
+//     single eval, rather than trusting that anything the agent already
+//     banked as a KEEP must have been in scope. An agent that could move
+//     this anchor (or a bug that let it drift) could launder an
+//     out-of-scope edit into the "already accepted" state after only one
+//     eval, permanently invisible to the scope gate from then on.
+//   - MeasureCommit is the ADVANCING measurement pointer: the commit the
+//     pinned baseline worktree is actually checked out to, and what every
+//     `eval` measures the candidate against. It starts equal to Commit and
+//     is re-pointed to the candidate's own commit after every KEEP (see
+//     internal/pipeline), so each `eval` answers "did THIS change help",
+//     not "is the tree better than when the run started" — the latter is
+//     what let a no-op experiment coast to KEEP on the strength of an
+//     earlier, already-banked improvement.
+//
+// Collapsing these two into one field would either freeze the measurement
+// baseline forever (letting stale early wins mask later no-ops as KEEP) or
+// let the scope gate's comparison point drift (letting an agent accumulate
+// out-of-scope edits across kept experiments without ever being re-checked
+// against the true starting point). Keep them separate.
 type Baseline struct {
 	// Tag is the human-chosen run identifier, e.g. "sep4".
 	Tag string `json:"tag"`
 	// Branch is the run branch checked out when the baseline was recorded.
 	Branch string `json:"branch"`
-	// Commit is the short hash the run branch pointed to at baseline time.
+	// Commit is the short hash the run branch pointed to at baseline time —
+	// the FROZEN anchor. See the type doc comment: this must never change
+	// after `baseline` records it.
 	Commit string `json:"commit"`
+	// MeasureCommit is the short hash currently checked out in the pinned
+	// baseline worktree — the ADVANCING measurement anchor `eval` compares
+	// each candidate against. It starts equal to Commit and moves to the
+	// candidate's commit after every KEEP. Unlike Commit, it is expected to
+	// change over the life of a run. See the type doc comment for why the
+	// two are kept separate.
+	MeasureCommit string `json:"measure_commit"`
 	// CreatedAt is when the baseline was recorded, in UTC.
 	CreatedAt time.Time `json:"created_at"`
 	// Benchmarks is the declared benchmark set measured at baseline.
@@ -149,6 +186,15 @@ func LoadBaseline(path string) (*Baseline, error) {
 	var b Baseline
 	if err := json.Unmarshal(data, &b); err != nil {
 		return nil, fmt.Errorf("parse baseline %s: %w", path, err)
+	}
+	// A baseline.json written before MeasureCommit existed has no
+	// "measure_commit" field, which unmarshals to "". Fall back to Commit —
+	// exactly the value a fresh baseline would have started MeasureCommit
+	// at — rather than leaving it empty, which would fail the worktree
+	// integrity check in internal/pipeline on the very first eval of an
+	// old run.
+	if b.MeasureCommit == "" {
+		b.MeasureCommit = b.Commit
 	}
 	return &b, nil
 }

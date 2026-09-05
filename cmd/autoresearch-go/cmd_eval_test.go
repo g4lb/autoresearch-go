@@ -233,12 +233,23 @@ func CountWords(s string) map[string]int {
 		t.Errorf("human stdout = %q, want an allocs/op line under the benchmark delta", humanOut)
 	}
 
+	// This second runEval call makes no new commit at all — it re-measures
+	// the exact same candidate the first call already kept. Since a KEEP
+	// advances the measurement baseline (see internal/pipeline's
+	// advanceMeasurementBaseline) to that very commit, this candidate is now
+	// being measured against ITSELF and must DISCARD, not KEEP: this is the
+	// command-layer confirmation of the fix for a no-op experiment coasting
+	// on an earlier improvement's already-banked score. It still goes
+	// through full measurement (only a gate failure returns no
+	// Measurements), so the JSON output still carries an allocs_deltas
+	// field either way.
 	var jsonCode int
 	jsonOut := captureStdout(t, func() {
 		jsonCode = runEval([]string{"-C", dir, "-no-log", "-json"})
 	})
-	if jsonCode != exitOK {
-		t.Fatalf("runEval -json = %d, want %d (KEEP)\nstdout=%s", jsonCode, exitOK, jsonOut)
+	if jsonCode != exitDiscard {
+		t.Fatalf("runEval -json (re-measuring the just-kept commit, unchanged) = %d, want %d (DISCARD)\nstdout=%s",
+			jsonCode, exitDiscard, jsonOut)
 	}
 	if !strings.Contains(jsonOut, `"allocs_deltas"`) {
 		t.Errorf("json stdout = %q, want an allocs_deltas field", jsonOut)
@@ -251,13 +262,14 @@ func CountWords(s string) map[string]int {
 	if len(rows) != 2 {
 		t.Fatalf("results.tsv has %d row(s), want 2 (one per runEval call)", len(rows))
 	}
-	for _, row := range rows {
-		if row.AllocsDelta >= 0 {
-			t.Errorf("row %+v: AllocsDelta = %v, want negative (the rewrite allocates less)", row, row.AllocsDelta)
-		}
-		if row.Status != "keep" {
-			t.Errorf("row %+v: Status = %q, want keep", row, row.Status)
-		}
+	if rows[0].Status != "keep" {
+		t.Errorf("row 0 (a genuine improvement over the original baseline) status = %q, want keep", rows[0].Status)
+	}
+	if rows[0].AllocsDelta >= 0 {
+		t.Errorf("row 0: AllocsDelta = %v, want negative (the rewrite allocates less)", rows[0].AllocsDelta)
+	}
+	if rows[1].Status != "discard" {
+		t.Errorf("row 1 (re-measuring the just-kept commit, unchanged) status = %q, want discard", rows[1].Status)
 	}
 }
 

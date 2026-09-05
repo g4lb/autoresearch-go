@@ -3,6 +3,7 @@ package pipeline
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -243,13 +244,14 @@ func setupRunWithBenchmarks(t *testing.T, benchmarks []string, extraFiles map[st
 	}
 
 	base := &state.Baseline{
-		Tag:          tag,
-		Branch:       branch,
-		Commit:       headCommit,
-		CreatedAt:    time.Now().UTC(),
-		Benchmarks:   cfg.Benchmarks,
-		Pattern:      state.BenchPattern(cfg.Benchmarks),
-		ConfigSHA256: configHash,
+		Tag:           tag,
+		Branch:        branch,
+		Commit:        headCommit,
+		MeasureCommit: headCommit,
+		CreatedAt:     time.Now().UTC(),
+		Benchmarks:    cfg.Benchmarks,
+		Pattern:       state.BenchPattern(cfg.Benchmarks),
+		ConfigSHA256:  configHash,
 	}
 	if err := base.Save(filepath.Join(stateDir, state.BaselineFile)); err != nil {
 		t.Fatalf("save baseline: %v", err)
@@ -322,6 +324,79 @@ func CountWords(s string) map[string]int {
 	if err := os.WriteFile(filepath.Join(root, "wordcount.go"), []byte(src), 0o644); err != nil {
 		t.Fatalf("write broken wordcount.go: %v", err)
 	}
+}
+
+// workTestSource is the frozen benchmark for the "work" fixture used by the
+// advancing-measurement-baseline scenarios below (TestEvalDiscards... and
+// TestEvalKeepsGenuine...). Its runtime is entirely controlled by the
+// workSpins variable in work.go — an ordinary, in-scope source file the
+// tests rewrite between experiments — rather than by any actual Go
+// optimization idiom, so these tests get a large, deterministic,
+// machine-independent speed difference instead of hoping a real code change
+// measures faster on whatever hardware runs the suite.
+const workTestSource = `package demo
+
+import "testing"
+
+// BenchmarkWork exists purely as a fixture for pipeline_test.go's
+// advancing-baseline scenarios. Its cost is controlled entirely by
+// workSpins in work.go, which the test rewrites to stand in for "the
+// agent's optimization" between experiments.
+func BenchmarkWork(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if Work() < 0 {
+			b.Fatal("impossible")
+		}
+	}
+}
+`
+
+// workFixtureFiles returns the extraFiles map for setupRunWithBenchmarks
+// that pins BenchmarkWork's frozen test file and an initial work.go with
+// the given spin count.
+func workFixtureFiles(initialSpins int) map[string]string {
+	return map[string]string{
+		"work_test.go": workTestSource,
+		"work.go":      workSource(initialSpins),
+	}
+}
+
+// workSource renders work.go for the given spin count.
+func workSource(spins int) string {
+	return fmt.Sprintf(`package demo
+
+// workSpins controls how much busy-work Work performs. Lowering it stands
+// in for a genuine optimization in pipeline_test.go's advancing-baseline
+// scenarios.
+var workSpins = %d
+
+// Work performs an amount of busy arithmetic proportional to workSpins.
+func Work() int {
+	sum := 0
+	for i := 0; i < workSpins; i++ {
+		sum += i %% 7
+	}
+	return sum
+}
+`, spins)
+}
+
+// writeWorkSpins rewrites work.go with a new spin count, leaving the rest
+// of the fixture untouched.
+func writeWorkSpins(t *testing.T, root string, spins int) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, "work.go"), []byte(workSource(spins)), 0o644); err != nil {
+		t.Fatalf("write work.go (spins=%d): %v", spins, err)
+	}
+}
+
+// addComment appends a no-op comment line to a Go source file — a change
+// that alters nothing about what the file does, used to construct a "did
+// this experiment actually help" regression case.
+func addComment(t *testing.T, path, comment string) {
+	t.Helper()
+	appendToFile(t, path, "\n// "+comment+"\n")
 }
 
 // --- scenarios ----------------------------------------------------------
@@ -643,5 +718,166 @@ func BenchmarkNoAlloc(b *testing.B) {
 	}
 	if !strings.Contains(env.Log.String(), "allocs/op comparison unavailable") {
 		t.Errorf("log = %q, want a note that the allocs/op comparison was skipped", env.Log.String())
+	}
+}
+
+// TestEvalDiscardsNoOpAfterPriorImprovementKept is the regression test for
+// the advancing-measurement-baseline fix: it is the test that would have
+// caught the original flaw.
+//
+// Before the fix, every eval measured the candidate against the run's
+// ORIGINAL commit for the life of the run. Once one real improvement was
+// kept, every LATER experiment — however useless — was still being compared
+// to that same stale, slower original state. A change that did nothing at
+// all (here: a comment) would still look like a large improvement relative
+// to the original baseline, so verdict.Decide's "score < 1 and a
+// significant improvement" test was satisfied by an earlier, already-banked
+// win rather than by anything the second experiment itself did — and it
+// wrongly returned KEEP.
+func TestEvalDiscardsNoOpAfterPriorImprovementKept(t *testing.T) {
+	if testing.Short() {
+		t.Skip("measures real benchmarks; skipped in -short")
+	}
+	env := setupRunWithBenchmarks(t, []string{"BenchmarkWork"}, workFixtureFiles(3000000))
+
+	// Experiment 1: a genuine, large improvement. Must be kept, and the
+	// measurement baseline must advance to this commit.
+	writeWorkSpins(t, env.Root, 500000)
+	commit(t, env.Root, "cut workSpins ~6x")
+	res1, _, err := Eval(context.Background(), env.Options())
+	if err != nil {
+		t.Fatalf("Eval (experiment 1): %v", err)
+	}
+	if res1.Status != verdict.StatusKeep {
+		t.Fatalf("experiment 1 status = %s (%s), want KEEP\nlog:\n%s", res1.Status, res1.Message, env.Log)
+	}
+	kept1Commit, err := gitx.HeadCommit(env.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Base.MeasureCommit != kept1Commit {
+		t.Fatalf("MeasureCommit = %s after experiment 1's KEEP, want it advanced to the kept commit %s",
+			env.Base.MeasureCommit, kept1Commit)
+	}
+	if env.Base.Commit == kept1Commit {
+		t.Fatalf("frozen Commit anchor changed to %s — it must never advance", kept1Commit)
+	}
+
+	// Experiment 2: a no-op. workSpins is untouched; only a comment is
+	// added. Measured against the just-kept 500,000-spin state (the fix),
+	// this is statistically indistinguishable from it and must DISCARD.
+	// Measured against the original 3,000,000-spin state (the bug), it
+	// would still look like a ~6x win and wrongly KEEP.
+	env.Log = &bytes.Buffer{}
+	addComment(t, filepath.Join(env.Root, "work.go"), "no-op: just a comment")
+	commit(t, env.Root, "add a comment, nothing else")
+
+	res2, _, err := Eval(context.Background(), env.Options())
+	if err != nil {
+		t.Fatalf("Eval (experiment 2): %v", err)
+	}
+	if res2.Status != verdict.StatusDiscard {
+		t.Fatalf("experiment 2 (a no-op change made right after a prior KEEP) status = %s (%s), want DISCARD — "+
+			"this is the exact flaw the advancing measurement baseline fixes: a no-op must not coast to "+
+			"KEEP on the strength of an earlier, already-banked improvement\nlog:\n%s",
+			res2.Status, res2.Message, env.Log)
+	}
+}
+
+// TestEvalKeepsGenuineSecondImprovementOnTopOfFirst proves the fix does not
+// overcorrect: a SECOND experiment that is a real improvement over the
+// first (not merely over the run's original commit) must still KEEP, now
+// measured against the first experiment's kept state rather than the
+// original baseline.
+func TestEvalKeepsGenuineSecondImprovementOnTopOfFirst(t *testing.T) {
+	if testing.Short() {
+		t.Skip("measures real benchmarks; skipped in -short")
+	}
+	env := setupRunWithBenchmarks(t, []string{"BenchmarkWork"}, workFixtureFiles(3000000))
+
+	writeWorkSpins(t, env.Root, 500000)
+	commit(t, env.Root, "cut workSpins ~6x")
+	res1, _, err := Eval(context.Background(), env.Options())
+	if err != nil {
+		t.Fatalf("Eval (experiment 1): %v", err)
+	}
+	if res1.Status != verdict.StatusKeep {
+		t.Fatalf("experiment 1 status = %s (%s), want KEEP\nlog:\n%s", res1.Status, res1.Message, env.Log)
+	}
+
+	// Experiment 2: a further, genuine improvement on top of the first.
+	env.Log = &bytes.Buffer{}
+	writeWorkSpins(t, env.Root, 80000)
+	commit(t, env.Root, "cut workSpins another ~6x")
+
+	res2, _, err := Eval(context.Background(), env.Options())
+	if err != nil {
+		t.Fatalf("Eval (experiment 2): %v", err)
+	}
+	if res2.Status != verdict.StatusKeep {
+		t.Fatalf("experiment 2 (a genuine further improvement) status = %s (%s), want KEEP\nlog:\n%s",
+			res2.Status, res2.Message, env.Log)
+	}
+	if res2.Score >= 1 {
+		t.Errorf("experiment 2 score = %v, want < 1", res2.Score)
+	}
+}
+
+// TestEvalKeepsFrozenTestsAtOriginalCommitAfterBaselineAdvances proves that
+// advancing MeasureCommit does not also "un-freeze" the success criteria:
+// the frozen `_test.go` manifest and store, written once at `baseline`
+// against the ORIGINAL commit, must still be what every later eval restores
+// from and enforces, even after a KEEP has moved MeasureCommit well past
+// that original commit.
+func TestEvalKeepsFrozenTestsAtOriginalCommitAfterBaselineAdvances(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the real correctness gates; skipped in -short")
+	}
+	env := setupRun(t)
+
+	// Experiment 1: a genuine improvement, kept — advances MeasureCommit
+	// away from the frozen Commit anchor.
+	writeOptimizedWordCount(t, env.Root)
+	commit(t, env.Root, "use strings.Builder")
+	res1, _, err := Eval(context.Background(), env.Options())
+	if err != nil {
+		t.Fatalf("Eval (experiment 1): %v", err)
+	}
+	if res1.Status != verdict.StatusKeep {
+		t.Fatalf("experiment 1 status = %s (%s), want KEEP\nlog:\n%s", res1.Status, res1.Message, env.Log)
+	}
+	frozenAnchor := env.Base.Commit
+	if env.Base.MeasureCommit == frozenAnchor {
+		t.Fatal("MeasureCommit did not advance after a KEEP")
+	}
+
+	// Experiment 2: break the implementation AND gut the frozen test, as in
+	// TestEvalRestoresWeakenedTests. If advancing MeasureCommit had also
+	// un-frozen the success criteria, the gutted test would stick and this
+	// would wrongly pass instead of failing.
+	env.Log = &bytes.Buffer{}
+	writeBrokenWordCount(t, env.Root)
+	if err := os.WriteFile(filepath.Join(env.Root, "wordcount_test.go"), []byte("package demo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commit(t, env.Root, "break impl and gut tests")
+
+	res2, _, err := Eval(context.Background(), env.Options())
+	if err != nil {
+		t.Fatalf("Eval (experiment 2): %v", err)
+	}
+	if res2.Status != verdict.StatusFail {
+		t.Fatalf("experiment 2 status = %s, want FAIL: the frozen test must still be enforced "+
+			"even after the measurement baseline advanced\nlog:\n%s", res2.Status, env.Log)
+	}
+	got, err := os.ReadFile(filepath.Join(env.Root, "wordcount_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "TestCountWords") {
+		t.Error("frozen test was not restored after the measurement baseline had advanced")
+	}
+	if env.Base.Commit != frozenAnchor {
+		t.Fatalf("frozen Commit anchor changed from %s to %s — it must never advance", frozenAnchor, env.Base.Commit)
 	}
 }

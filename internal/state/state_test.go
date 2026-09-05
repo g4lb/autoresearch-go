@@ -36,6 +36,63 @@ func TestBaselineRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBaselineMeasureCommitRoundTrips(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "baseline.json")
+	want := &Baseline{
+		Tag:           "sep4",
+		Branch:        "autoresearch-go/sep4",
+		Commit:        "a1b2c3d",
+		MeasureCommit: "e4f5a6b", // advanced past Commit by a KEEP
+		CreatedAt:     time.Now().UTC().Truncate(time.Second),
+		Benchmarks:    []string{"BenchmarkCountWords"},
+		Pattern:       "^(BenchmarkCountWords)$",
+		ConfigSHA256:  "deadbeef",
+	}
+	if err := want.Save(p); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadBaseline(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.MeasureCommit != want.MeasureCommit {
+		t.Errorf("MeasureCommit = %q, want %q", got.MeasureCommit, want.MeasureCommit)
+	}
+	if got.Commit != want.Commit {
+		t.Errorf("Commit = %q, want %q (must not be conflated with MeasureCommit)", got.Commit, want.Commit)
+	}
+}
+
+// TestLoadBaselineDefaultsMeasureCommitToCommit covers a baseline.json
+// written before MeasureCommit existed (no "measure_commit" key at all): it
+// must fall back to Commit rather than loading as "", which would fail the
+// worktree integrity check in internal/pipeline on the very first eval of
+// an old run.
+func TestLoadBaselineDefaultsMeasureCommitToCommit(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "baseline.json")
+	const oldFormat = `{
+  "tag": "sep4",
+  "branch": "autoresearch-go/sep4",
+  "commit": "a1b2c3d",
+  "created_at": "2026-01-01T00:00:00Z",
+  "benchmarks": ["BenchmarkCountWords"],
+  "pattern": "^(BenchmarkCountWords)$",
+  "config_sha256": "deadbeef"
+}
+`
+	if err := os.WriteFile(p, []byte(oldFormat), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadBaseline(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.MeasureCommit != got.Commit {
+		t.Errorf("MeasureCommit = %q, want it defaulted to Commit %q for a pre-MeasureCommit baseline.json",
+			got.MeasureCommit, got.Commit)
+	}
+}
+
 func TestLoadBaselineMissingIsActionable(t *testing.T) {
 	_, err := LoadBaseline(filepath.Join(t.TempDir(), "nope.json"))
 	if err == nil {
