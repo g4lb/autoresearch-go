@@ -3,8 +3,10 @@ package profile
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +23,11 @@ func TestCaptureSinglePackage(t *testing.T) {
 		t.Skip("skipping in short mode")
 	}
 
-	// Run against testdata/demo with a short benchtime to keep the test fast.
+	// 300ms of benchmark time gives the 100 Hz CPU profiler ~30 samples.
+	// That is the smallest budget at which the CountWords assertion below
+	// is about the fixture rather than about scheduling luck — see
+	// minCPUSamples. The multi-package test can stay at 20ms because it
+	// only asserts the tables are non-empty.
 	destDir := t.TempDir()
 	ctx := context.Background()
 
@@ -33,7 +39,7 @@ func TestCaptureSinglePackage(t *testing.T) {
 		t.Fatalf("Dirs = %v, want %v", dirs, want)
 	}
 
-	report, err := Capture(ctx, "../../testdata/demo", dirs, "Benchmark.*", "20ms", destDir, 30*time.Second)
+	report, err := Capture(ctx, "../../testdata/demo", dirs, "Benchmark.*", "300ms", destDir, 30*time.Second)
 	if err != nil {
 		t.Fatalf("Capture failed: %v", err)
 	}
@@ -51,9 +57,8 @@ func TestCaptureSinglePackage(t *testing.T) {
 	if pkg.CPUTop == "" {
 		t.Error("CPUTop is empty")
 	}
-	if !strings.Contains(pkg.CPUTop, "CountWords") {
-		t.Errorf("CPUTop does not mention CountWords:\n%s", pkg.CPUTop)
-	}
+	assertEnoughCPUSamples(t, pkg.CPUTop)
+	assertProfileBlamesCountWords(t, pkg.CPUPath)
 
 	// Verify that we got non-empty allocations output.
 	if pkg.MemTop == "" {
@@ -290,3 +295,69 @@ func TestDirsFiltersByConfiguredBenchmarks(t *testing.T) {
 		t.Errorf("Dirs error does not name the configured benchmark: %v", err)
 	}
 }
+
+// assertProfileBlamesCountWords checks that the captured profile puts the
+// fixture's own function on the hot path.
+//
+// It re-runs pprof with -cum rather than asserting on pkg.CPUTop, and the
+// distinction is the whole point: Capture renders `-top -nodecount=15`,
+// which is FLAT-ordered — the 15 hottest LEAF functions. CountWords spends
+// almost all of its time inside runtime.concatstrings, so its flat time is
+// small and whether it lands in the top 15 depends on how many distinct
+// runtime leaves the sampler happened to catch. That made the old assertion
+// a coin flip that got worse as the profile got better: at 300ms of samples
+// the flat table filled up with runtime.kevent, mallocgc and memmove and
+// CountWords dropped off entirely.
+//
+// Cumulatively it is not a coin flip at all — CountWords is an ancestor of
+// every sample the benchmark takes, so it sits at 100% cum. That is the
+// property worth asserting: the profile identifies the code under test.
+// Go profiles carry their own symbols, so pprof needs no binary here, which
+// matters because Capture deletes the test binary before returning.
+func assertProfileBlamesCountWords(t *testing.T, cpuPath string) {
+	t.Helper()
+	out, err := exec.Command("go", "tool", "pprof", "-top", "-cum", "-nodecount=10", cpuPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("pprof -cum %s: %v\n%s", cpuPath, err, out)
+	}
+	if !strings.Contains(string(out), "CountWords") {
+		t.Errorf("the captured profile does not put CountWords on the hot path:\n%s", out)
+	}
+}
+
+// minCPUSamples is the number of CPU samples below which "what is in this
+// profile?" stops being a question about the fixture and becomes a question
+// about scheduling luck.
+//
+// Go's CPU profiler samples at 100 Hz — one sample per 10ms of on-CPU time.
+// A 20ms benchtime yielded 3 samples on an idle machine here, and a full
+// parallel test run once produced a table built from 2, both of them
+// runtime.madvise: a single GC burst at the wrong instant displaced the
+// benchmark entirely. The real profile command runs at the configured
+// benchtime (default 1s, ~100 samples), so this is a property of the test,
+// not of Capture.
+const minCPUSamples = 10
+
+// assertEnoughCPUSamples fails if the profile behind top is too thin for any
+// assertion about its contents to mean anything, naming the sample count so
+// the failure explains itself.
+func assertEnoughCPUSamples(t *testing.T, top string) {
+	t.Helper()
+	m := totalSamplesRe.FindStringSubmatch(top)
+	if m == nil {
+		t.Fatalf("no %q line in pprof output — cannot tell whether the profile is adequate:\n%s",
+			"Total samples =", top)
+	}
+	d, err := time.ParseDuration(m[1])
+	if err != nil {
+		t.Fatalf("parse total samples %q: %v", m[1], err)
+	}
+	if n := int(d / (10 * time.Millisecond)); n < minCPUSamples {
+		t.Fatalf("profile has only ~%d CPU samples (total %s); at least %d are needed before the "+
+			"contents of the top table say anything about the benchmark rather than about what else "+
+			"the machine was doing. Raise the benchtime passed to Capture.\n%s", n, m[1], minCPUSamples, top)
+	}
+}
+
+// totalSamplesRe matches pprof's "Total samples = 360ms (70.71%)" header.
+var totalSamplesRe = regexp.MustCompile(`Total samples = ([0-9.]+(?:ns|us|µs|ms|s))`)
