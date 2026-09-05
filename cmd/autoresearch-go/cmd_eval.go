@@ -61,6 +61,14 @@ func runEval(args []string) int {
 		return exitUsage
 	}
 	tag := strings.TrimPrefix(branch, branchPrefix)
+	// tag is derived from a branch name git itself already validated, so a
+	// traversal tag cannot reach here in practice. Check anyway: this is the
+	// same trust boundary FIX 1 hardens in `baseline`, and validating costs
+	// nothing (state.StateDir enforces it internally regardless).
+	if err := state.ValidTag(tag); err != nil {
+		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", err)
+		return exitUsage
+	}
 
 	stateDir, err := state.StateDir(root, tag)
 	if err != nil {
@@ -269,6 +277,7 @@ func gateStages(cfg config.Config) []gateStage {
 		{"go build ./...", verdict.ReasonBuild},
 		{"go vet ./...", verdict.ReasonVet},
 		{testLabel, verdict.ReasonTests},
+		{"checking baseline worktree integrity", verdict.ReasonBaselineTampered},
 	}
 }
 

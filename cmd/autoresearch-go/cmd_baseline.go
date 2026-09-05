@@ -44,6 +44,17 @@ func runBaseline(args []string) int {
 		fmt.Fprintln(os.Stderr, "autoresearch-go baseline: -tag must not be empty")
 		return exitUsage
 	}
+	// Validated here, before state.StateDir or any os.MkdirAll ever sees the
+	// raw value: filepath.Join (inside StateDir) resolves ".." components,
+	// and MkdirAll would otherwise create a directory wherever a traversal
+	// tag lands — long before gitx.CreateBranch's own ref-name rules would
+	// get a chance to reject it. state.StateDir enforces the same check
+	// internally too, but failing fast here means a bad -tag never reaches
+	// any filesystem call at all, not even the state directory lookup.
+	if err := state.ValidTag(*tag); err != nil {
+		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
+		return exitUsage
+	}
 
 	root, err := gitx.Root(*dir)
 	if err != nil {

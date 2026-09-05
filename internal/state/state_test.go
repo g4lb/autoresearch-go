@@ -77,6 +77,34 @@ func TestBenchPatternEscapesMetacharacters(t *testing.T) {
 	}
 }
 
+func TestValidTagRejectsTraversalAndSeparators(t *testing.T) {
+	bad := []string{"..", "../escape", "a/b", "/etc/passwd", ".", ""}
+	for _, tag := range bad {
+		t.Run(tag, func(t *testing.T) {
+			if err := ValidTag(tag); err == nil {
+				t.Errorf("ValidTag(%q) = nil, want error", tag)
+			}
+		})
+	}
+}
+
+func TestValidTagAcceptsLegalTags(t *testing.T) {
+	good := []string{"sep4", "oct1", "release-1.2.3", "a_b", "2026-09-03", "A"}
+	for _, tag := range good {
+		t.Run(tag, func(t *testing.T) {
+			if err := ValidTag(tag); err != nil {
+				t.Errorf("ValidTag(%q) = %v, want nil", tag, err)
+			}
+		})
+	}
+}
+
+func TestStateDirRejectsInvalidTag(t *testing.T) {
+	if _, err := StateDir(t.TempDir(), "../escape"); err == nil {
+		t.Fatal("StateDir with a traversal tag = nil error, want error")
+	}
+}
+
 func TestStateDirResolvesSymlinks(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation typically needs elevation on Windows")

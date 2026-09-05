@@ -24,17 +24,18 @@ type Reason string
 
 // Reasons, grouped by the stage that produces them.
 const (
-	ReasonImproved        Reason = "improved"
-	ReasonNoImprovement   Reason = "no_significant_improvement"
-	ReasonGuardRegression Reason = "guard_regression"
-	ReasonScope           Reason = "scope_violation"
-	ReasonConfigChanged   Reason = "config_changed"
-	ReasonNewTestFile     Reason = "new_test_file"
-	ReasonSymlinkSwap     Reason = "symlink_swap"
-	ReasonBuild           Reason = "build_failed"
-	ReasonVet             Reason = "vet_failed"
-	ReasonTests           Reason = "tests_failed"
-	ReasonTimeout         Reason = "timeout"
+	ReasonImproved         Reason = "improved"
+	ReasonNoImprovement    Reason = "no_significant_improvement"
+	ReasonGuardRegression  Reason = "guard_regression"
+	ReasonScope            Reason = "scope_violation"
+	ReasonConfigChanged    Reason = "config_changed"
+	ReasonNewTestFile      Reason = "new_test_file"
+	ReasonSymlinkSwap      Reason = "symlink_swap"
+	ReasonBaselineTampered Reason = "baseline_tampered"
+	ReasonBuild            Reason = "build_failed"
+	ReasonVet              Reason = "vet_failed"
+	ReasonTests            Reason = "tests_failed"
+	ReasonTimeout          Reason = "timeout"
 )
 
 // Input is everything Decide needs once all correctness gates have passed.

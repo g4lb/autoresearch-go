@@ -224,6 +224,49 @@ func TestBaselineRefusesUnknownBenchmark(t *testing.T) {
 	}
 }
 
+func TestBaselineRejectsTraversalTag(t *testing.T) {
+	// Reproduces the reported finding: an unvalidated -tag reaches
+	// state.StateDir's filepath.Join, which resolves "..", and os.MkdirAll
+	// then creates a directory wherever the traversal lands — long before
+	// gitx.CreateBranch's own ref-name rules would ever see the tag. The
+	// fix must refuse before any directory outside the cache root is ever
+	// created, not just eventually fail on an unrelated later check.
+	dir := copyDemoRepo(t)
+	mustInit(t, dir)
+
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		t.Skip("no user cache dir on this platform")
+	}
+	marker := filepath.Join(t.TempDir(), "escaped-marker")
+	// state.StateDir joins the tag as the 4th path component under the
+	// cache dir (cache/autoresearch-go/<16-hex-char hash>/<tag>). Compute the
+	// traversal relative to a same-depth placeholder rather than cacheDir
+	// itself, so evilTag carries exactly enough ".." to reach marker once
+	// StateDir's real hash segment is joined in too — an insufficient count
+	// would only walk partway out and this test would then pass for the
+	// wrong reason.
+	placeholderStateDir := filepath.Join(cacheDir, "autoresearch-go", strings.Repeat("f", 16))
+	evilTag, err := filepath.Rel(placeholderStateDir, marker)
+	if err != nil {
+		t.Fatalf("filepath.Rel: %v", err)
+	}
+
+	var code int
+	stderr := captureStderr(t, func() {
+		code = runBaseline([]string{"-C", dir, "-tag", evilTag})
+	})
+	if code == exitOK {
+		t.Fatalf("runBaseline accepted a traversal tag %q, want refusal", evilTag)
+	}
+	if !strings.Contains(stderr, evilTag) {
+		t.Errorf("stderr = %q, want it to name the offending tag %q", stderr, evilTag)
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Errorf("traversal tag created %s outside the cache root", marker)
+	}
+}
+
 func TestBaselineAcceptsEmptyBenchmarksList(t *testing.T) {
 	// An empty benchmarks: list means "measure everything discovered" and
 	// must remain valid — it is not itself an unknown-benchmark configuration.

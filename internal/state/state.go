@@ -17,6 +17,41 @@ import (
 // StateDirName is the per-repository state directory name under the user cache.
 const StateDirName = "autoresearch-go"
 
+// validTagPattern is the strict allow-list ValidTag enforces: letters,
+// digits, '.', '_' and '-'. Notably absent is '/' (or any other path
+// separator), which alone is enough to block both directory traversal
+// ("../../etc") and an absolute path ("/etc/passwd") — a tag can never
+// contain more than one path segment.
+var validTagPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// ValidTag reports whether tag is safe to use as a filesystem path segment.
+//
+// StateDir joins tag directly into an out-of-tree path with filepath.Join,
+// which resolves ".." components, and callers create that path with
+// os.MkdirAll immediately afterward — long before git's own ref-name rules
+// (e.g. inside gitx.CreateBranch) would ever get a chance to reject a bad
+// tag. Without this check, a tag like "../../../../tmp/evil" reaches
+// MkdirAll and creates a directory wherever the traversal lands, before any
+// git operation runs at all.
+//
+// ValidTag closes that gap with a strict allow-list rather than trying to
+// enumerate dangerous sequences: only letters, digits, '.', '_' and '-' are
+// permitted, and "." and ".." are rejected even though both characters are
+// individually allowed, since either one alone means "this directory" or
+// "the parent directory" rather than naming anything.
+func ValidTag(tag string) error {
+	if tag == "" {
+		return fmt.Errorf("tag must not be empty")
+	}
+	if tag == "." || tag == ".." {
+		return fmt.Errorf("tag %q is not allowed: %q is a directory reference, not a run identifier", tag, tag)
+	}
+	if !validTagPattern.MatchString(tag) {
+		return fmt.Errorf("tag %q is not allowed: tags may contain only letters, digits, '.', '_' and '-'", tag)
+	}
+	return nil
+}
+
 // StateDir returns the OUT-OF-TREE directory holding every piece of state the
 // metric depends on, for one repository and run tag.
 //
@@ -30,8 +65,13 @@ const StateDirName = "autoresearch-go"
 // returns KEEP without optimizing anything.
 //
 // Keyed by a hash of the repository's absolute path so two checkouts of the
-// same project never share state.
+// same project never share state. tag is validated with ValidTag before it
+// ever reaches a filesystem path, so every caller of StateDir — not just
+// `baseline` — gets the same guarantee against a traversal tag.
 func StateDir(repoRoot, tag string) (string, error) {
+	if err := ValidTag(tag); err != nil {
+		return "", err
+	}
 	abs, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return "", err

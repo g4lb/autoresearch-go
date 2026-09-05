@@ -206,9 +206,40 @@ func Eval(ctx context.Context, o Options) (verdict.Result, *Measurements, error)
 		return verdict.Gate(verdict.StatusFail, verdict.ReasonTests, res.Tail(40)), nil, nil
 	}
 
+	// 5b. Baseline worktree integrity. See state.StateDir's doc comment: an
+	// agent could edit the pinned baseline worktree in place to make the
+	// BASELINE itself slow, after which every candidate "improves" and every
+	// experiment returns KEEP without optimizing anything. Detect that by
+	// checking the pinned worktree's HEAD still matches the commit recorded
+	// at baseline time.
+	//
+	// This is a DETECTION, not a prevention, and only a partial one: the
+	// state directory lives outside the repo, but the agent runs as the same
+	// OS user, so nothing stops it from editing the worktree in place, and
+	// this check only catches that if the worktree's HEAD itself moves. A
+	// determined same-user attacker who edits the worktree's tracked files
+	// WITHOUT moving HEAD (e.g. `git commit --amend` back onto the same
+	// hash after editing, or just dirtying the tree without committing) is
+	// not caught here at all. Nor is an attacker who also rewrites
+	// baseline.json's Commit field to match a genuinely different HEAD they
+	// moved the worktree to — that rewrites the very value this check
+	// compares against. Treat this as catching accidental clobbering and a
+	// careless tamper, not as an airtight guarantee.
+	worktreeDir := filepath.Join(o.StateDir, state.WorktreeName)
+	worktreeHead, err := gitx.HeadCommit(worktreeDir)
+	if err != nil {
+		return verdict.Result{}, nil, err
+	}
+	if worktreeHead != o.Base.Commit {
+		return verdict.Gate(verdict.StatusFail, verdict.ReasonBaselineTampered,
+			fmt.Sprintf("pinned baseline worktree HEAD is %s but the recorded baseline commit is %s — "+
+				"the worktree no longer matches the baseline and this run's measurements cannot be trusted. "+
+				"Start a fresh run with 'autoresearch-go baseline'.", worktreeHead, o.Base.Commit)), nil, nil
+	}
+
 	// 6. Measure, interleaved against the pinned baseline worktree.
 	baseSet, candSet, err := measure.Run(ctx, measure.Options{
-		BaseDir:   filepath.Join(o.StateDir, state.WorktreeName),
+		BaseDir:   worktreeDir,
 		CandDir:   o.Root,
 		Pattern:   o.Base.Pattern,
 		Benchtime: o.Cfg.Benchtime,

@@ -463,6 +463,36 @@ func TestEvalFailsOnSymlinkSwappedTestFile(t *testing.T) {
 	}
 }
 
+func TestEvalFailsWhenBaselineWorktreeTampered(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the real correctness gates; skipped in -short")
+	}
+	env := setupRun(t)
+
+	// Simulate an agent (or an accidental clobber) editing the pinned
+	// baseline worktree in place: check out a different commit inside it
+	// so its HEAD no longer matches env.Base.Commit. copyDemoRepo's
+	// "initial commit" is the parent of setupRun's "autoresearch-go init"
+	// commit (the pinned baseline commit), so HEAD~1 inside the worktree
+	// reaches it.
+	worktreeDir := filepath.Join(env.StateDir, state.WorktreeName)
+	runGit(t, worktreeDir, "checkout", "-q", "HEAD~1")
+
+	writeOptimizedWordCount(t, env.Root)
+	commit(t, env.Root, "use strings.Builder")
+
+	res, meas, err := Eval(context.Background(), env.Options())
+	if err != nil {
+		t.Fatalf("Eval: %v", err)
+	}
+	if res.Status != verdict.StatusFail || res.Reason != verdict.ReasonBaselineTampered {
+		t.Fatalf("status = %s/%s, want FAIL/baseline_tampered\nlog:\n%s", res.Status, res.Reason, env.Log)
+	}
+	if meas != nil {
+		t.Errorf("Measurements = %+v, want nil: a tampered baseline must not be measured at all", meas)
+	}
+}
+
 func TestEvalRejectsGoModEdit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the real correctness gates; skipped in -short")
