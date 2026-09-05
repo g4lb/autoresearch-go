@@ -305,6 +305,7 @@ func Eval(ctx context.Context, o Options) (verdict.Result, *Measurements, error)
 		Deltas:        timeDeltas,
 		Score:         score,
 		MaxRegressPct: o.Cfg.MaxRegressPct,
+		MinEffectPct:  o.Cfg.MinEffectPct,
 	})
 
 	// 8. Advance the measurement baseline on KEEP. Without this, every

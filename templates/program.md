@@ -78,6 +78,16 @@ Any status the harness cannot classify is reported as exit code `2`
 (FAIL) rather than a silent success — treat an unrecognized `--json` status
 the same way you would treat FAIL.
 
+**A `KEEP` requires a real, not just a technically significant, improvement.**
+`eval` only returns `KEEP` when `score` clears `1 - min_effect_pct/100` (default
+1%, i.e. score < 0.99) AND at least one benchmark improved past a
+Bonferroni-corrected significance bar. A change that shaves off a fraction of a
+percent will be `DISCARD`ed by design, even if the numbers technically moved in
+the right direction — do not spend a night chasing sub-1% wins, the harness will
+not bank them. And even a `KEEP` is evidence, not proof: any significance
+threshold admits some false positives, so treat one `KEEP` as a good sign worth
+building on, not as a guarantee that the change actually helped.
+
 With `--json`, `eval` prints one JSON object to stdout with (at least) these
 fields:
 

@@ -283,8 +283,33 @@ One number, so nothing can be cherry-picked:
 score = geomean(new_ns / base_ns)   across the declared benchmark set
 ```
 
-`KEEP` requires **all** of: score < 1, at least one statistically significant
-improvement, and no significant regression beyond `max_regress_pct` (default 5 %).
+`KEEP` requires **all** of:
+
+1. **A minimum real improvement.** `score` must be below `1 - min_effect_pct/100`
+   (default `min_effect_pct: 1.0`, i.e. score < 0.99), not merely below 1. A change
+   that is technically significant but trivially small is not worth a commit in an
+   unattended overnight loop.
+2. **A Bonferroni-corrected significant improvement.** At least one benchmark's
+   p-value must clear `alpha / k`, where `k` is the number of benchmarks compared
+   in that experiment — not the raw `alpha` (0.05). Testing `k` benchmarks against
+   the same uncorrected `alpha` inflates the chance that at least one shows a
+   spurious "significant" result purely by chance (with 4 benchmarks, about an
+   18% chance); dividing `alpha` by `k` is the standard correction for that.
+3. **No significant regression beyond `max_regress_pct`** (default 5%). This guard
+   deliberately uses the raw, **uncorrected** `alpha`, not the Bonferroni-corrected
+   one from rule 2 — on purpose, and it looks inconsistent until you see why: the
+   correction in rule 2 only ever makes it *harder* to call a result significant,
+   and applying it to the regression guard would make real regressions *easier* to
+   miss. We want the opposite bias for harm: conservative about accepting a win,
+   liberal about catching damage.
+
+A `Delta`'s reported significance (`p < alpha`, no correction) is always the raw,
+honest statistic — that's what a human or agent should see when reading a report.
+The Bonferroni correction in rule 2 is a KEEP-decision threshold layered on top,
+not a redefinition of "significant"; `autoresearch-go eval`'s output calls out a
+benchmark that is significant at `alpha` but did not clear the corrected bar,
+rather than silently calling it "not significant."
+
 `allocs/op` and `B/op` are measured and shown to the agent as hints, but never scored.
 
 `base_ns` is **not** fixed for the whole run. `baseline` pins two things that are
@@ -308,6 +333,17 @@ successive real improvements compound the way percentage changes do.
 
 Stated plainly, because performance tools that oversell are worse than useless:
 
+- **A `KEEP` is evidence, not proof.** Any fixed significance threshold admits some
+  false positives by construction — that's what "alpha" means. Measuring 100
+  genuine no-op trials (a commit that changes only a comment) against the
+  pre-Bonferroni rule produced 2-3 spurious `KEEP`s, roughly a 3-5% rate, consistent
+  with running several benchmarks per experiment against `alpha = 0.05` each. The
+  minimum-effect floor and the Bonferroni correction described in
+  [Scoring](#scoring) make the rule substantially stricter — the family-wise
+  correction directly targets the multiple-comparisons inflation, and the effect
+  floor throws out wins too small to matter even when real — but they reduce the
+  false-`KEEP` rate, they do not (and cannot) eliminate it. Treat a single `KEEP`
+  as evidence worth banking, not as proof the change works.
 - **Laptops are noisy.** macOS P/E core scheduling makes numbers jump. Interleaving and
   `-count` mitigate it and `doctor` warns you, but a quiet Linux box gives cleaner
   results.

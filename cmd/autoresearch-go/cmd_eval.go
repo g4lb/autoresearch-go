@@ -325,11 +325,22 @@ func printHuman(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta, cfg 
 
 	sorted := append([]bench.Delta(nil), timeDeltas...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+	// k mirrors verdict.Decide's Bonferroni family size: the number of
+	// benchmarks compared in this experiment.
+	k := len(sorted)
 	worst := 0.0
 	for _, d := range sorted {
 		note := ""
-		if !d.Significant {
+		switch {
+		case !d.Significant:
+			// Significant is always "at the raw, uncorrected alpha" — see
+			// internal/verdict.Decide's doc comment.
 			note = "  (not significant)"
+		case k > 1 && d.P >= d.Alpha/float64(k):
+			// Truthful even though it looks odd: this benchmark IS
+			// significant at alpha, just not at the stricter
+			// Bonferroni-corrected bar verdict.Decide requires for a KEEP.
+			note = fmt.Sprintf("  (significant at alpha, not at corrected alpha/%d)", k)
 		}
 		fmt.Printf("%-24s %+6.1f%%  [p=%.3f n=%d]%s\n", d.Name, d.PctChange, d.P, d.NCand, note)
 		// allocs/op is never scored (see pipeline.Measurements) — it is
@@ -348,8 +359,8 @@ func printHuman(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta, cfg 
 	if res.Reason == verdict.ReasonGuardRegression {
 		guard = "TRIPPED"
 	}
-	fmt.Printf("\nSCORE  %.3f  (%+.1f%%)   guard: max regress %+.1f%% < %.1f%% %s\n",
-		res.Score, (res.Score-1)*100, worst, cfg.MaxRegressPct, guard)
+	fmt.Printf("\nSCORE  %.3f  (%+.1f%%)   min effect: %.1f%%   guard: max regress %+.1f%% < %.1f%% %s\n",
+		res.Score, (res.Score-1)*100, cfg.MinEffectPct, worst, cfg.MaxRegressPct, guard)
 	fmt.Printf("\nVERDICT: %s\n", res.Status)
 }
 

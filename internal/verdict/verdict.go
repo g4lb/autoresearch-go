@@ -43,6 +43,11 @@ type Input struct {
 	Deltas        []bench.Delta
 	Score         float64
 	MaxRegressPct float64
+	// MinEffectPct is the smallest geomean improvement, as a percentage,
+	// that qualifies for KEEP: Score must be below 1 - MinEffectPct/100.
+	// The zero value requires only Score < 1, matching the pre-Bonferroni
+	// rule; internal/config.Default sets this to 1.0 for real runs.
+	MinEffectPct float64
 }
 
 // Result is the harness's answer for one experiment.
@@ -61,11 +66,31 @@ func Gate(status Status, reason Reason, message string) Result {
 
 // Decide applies the scoring rules:
 //
-//  1. Any statistically significant regression larger than MaxRegressPct
-//     rejects the change, however good the overall score.
-//  2. Otherwise keep only when the score is a real speedup AND at least one
-//     benchmark improved significantly. Requiring significance is what stops
-//     the agent from banking measurement noise as progress.
+//  1. Any regression significant at the raw, UNCORRECTED alpha (Delta.
+//     Significant) and larger than MaxRegressPct rejects the change,
+//     however good the overall score. This check deliberately does NOT
+//     apply the Bonferroni correction from rule 2: Bonferroni only ever
+//     makes it harder to call a result significant, and applying it here
+//     would make the guard less sensitive to harm — backwards from what a
+//     guard is for. The asymmetry is intentional: be conservative about
+//     accepting a win, be liberal about catching a regression.
+//  2. Otherwise keep only when BOTH:
+//     a. the score is a real speedup by at least MinEffectPct — Score must
+//     be below 1 - MinEffectPct/100, not merely below 1. A result that is
+//     technically significant but trivially small is not worth a commit
+//     in an unattended loop.
+//     b. at least one benchmark improved at the Bonferroni-corrected
+//     threshold alpha/k, where k is the number of benchmarks compared in
+//     this experiment (len(in.Deltas)). Comparing k benchmarks against the
+//     same uncorrected alpha inflates the family-wise false-positive rate
+//     (with k=4 benchmarks, roughly an 18% chance at least one shows a
+//     spurious "significant" improvement even when nothing changed);
+//     dividing alpha by k is the standard correction.
+//
+// Delta.Significant always means "significant at the raw, uncorrected
+// alpha" — that stays the honest statistic for a human or agent reading the
+// report. The Bonferroni correction applied in rule 2b is a KEEP-decision
+// threshold layered on top, not a redefinition of what "significant" means.
 func Decide(in Input) Result {
 	var regressions []bench.Delta
 	for _, d := range in.Deltas {
@@ -90,14 +115,24 @@ func Decide(in Input) Result {
 		}
 	}
 
+	// k is the number of benchmarks compared in this experiment — the
+	// family size for the Bonferroni correction below. len(in.Deltas) is
+	// never 0 in practice (bench.CompareAll errors out on an empty
+	// comparison), but guard against division by zero defensively anyway.
+	k := len(in.Deltas)
+	if k < 1 {
+		k = 1
+	}
 	improved := false
 	for _, d := range in.Deltas {
-		if d.Significant && d.PctChange < 0 {
+		correctedAlpha := d.Alpha / float64(k)
+		if d.PctChange < 0 && d.P < correctedAlpha {
 			improved = true
 			break
 		}
 	}
-	if in.Score < 1 && improved {
+	minEffectThreshold := 1 - in.MinEffectPct/100
+	if in.Score < minEffectThreshold && improved {
 		return Result{
 			Status:  StatusKeep,
 			Reason:  ReasonImproved,

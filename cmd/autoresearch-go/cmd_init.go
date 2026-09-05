@@ -180,6 +180,17 @@ func renderConfig(cfg config.Config) []byte {
 	b.WriteString("# rejects the whole experiment, however good the overall score.\n")
 	fmt.Fprintf(&b, "max_regress_pct: %s\n\n", strconv.FormatFloat(cfg.MaxRegressPct, 'g', -1, 64))
 
+	b.WriteString("# MinEffectPct is the smallest geomean improvement, as a percentage, that\n")
+	b.WriteString("# KEEP will accept — the score must fall below 1 - min_effect_pct/100, not\n")
+	b.WriteString("# merely below 1. A change can be statistically significant and still be\n")
+	b.WriteString("# too small to be worth a commit in an unattended overnight loop; this is\n")
+	b.WriteString("# the knob that says how small is too small. Lowering it lets the agent\n")
+	b.WriteString("# bank smaller real wins, but also banks more measurement noise, since any\n")
+	b.WriteString("# fixed significance threshold admits some false positives — raising it\n")
+	b.WriteString("# trades that noise for missing genuinely small improvements. The default\n")
+	b.WriteString("# of 1.0 requires at least a 1% real improvement.\n")
+	fmt.Fprintf(&b, "min_effect_pct: %s\n\n", strconv.FormatFloat(cfg.MinEffectPct, 'g', -1, 64))
+
 	b.WriteString("# GOMAXPROCS pins parallelism during measurement for more repeatable\n")
 	b.WriteString("# numbers. 0 leaves GOMAXPROCS alone.\n")
 	fmt.Fprintf(&b, "gomaxprocs: %d\n\n", cfg.GOMAXPROCS)

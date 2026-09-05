@@ -29,6 +29,11 @@ type Config struct {
 	Race bool `yaml:"race"`
 	// MaxRegressPct is the largest tolerated significant regression, percent.
 	MaxRegressPct float64 `yaml:"max_regress_pct"`
+	// MinEffectPct is the smallest geomean improvement, as a percentage,
+	// that a KEEP will accept: the score must be below 1 - MinEffectPct/100.
+	// A change that clears significance but is smaller than this is treated
+	// as not worth a commit in an unattended loop.
+	MinEffectPct float64 `yaml:"min_effect_pct"`
 	// GOMAXPROCS pins parallelism during measurement. 0 leaves it alone.
 	GOMAXPROCS int `yaml:"gomaxprocs"`
 	// Timeout bounds each subprocess phase.
@@ -45,6 +50,7 @@ func Default() Config {
 		Benchtime:     "1s",
 		Race:          true,
 		MaxRegressPct: 5.0,
+		MinEffectPct:  1.0,
 		Timeout:       "15m",
 	}
 }
@@ -84,6 +90,9 @@ func (c Config) Validate() error {
 	}
 	if c.MaxRegressPct < 0 {
 		return errors.New("max_regress_pct must not be negative")
+	}
+	if c.MinEffectPct < 0 || c.MinEffectPct >= 100 {
+		return errors.New("min_effect_pct must be at least 0 and less than 100")
 	}
 	if len(c.Scope) == 0 {
 		return errors.New("scope must list at least one path pattern")

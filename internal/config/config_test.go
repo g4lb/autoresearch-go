@@ -42,6 +42,9 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		{"count below minimum", func(c *Config) { c.Count = 1 }},
 		{"count below significance floor", func(c *Config) { c.Count = 3 }},
 		{"negative regress", func(c *Config) { c.MaxRegressPct = -1 }},
+		{"negative min effect", func(c *Config) { c.MinEffectPct = -1 }},
+		{"min effect at 100", func(c *Config) { c.MinEffectPct = 100 }},
+		{"min effect above 100", func(c *Config) { c.MinEffectPct = 150 }},
 		{"bad benchtime", func(c *Config) { c.Benchtime = "banana" }},
 		{"count-form benchtime", func(c *Config) { c.Benchtime = "100x" }},
 		{"bad timeout", func(c *Config) { c.Timeout = "banana" }},
@@ -121,6 +124,46 @@ func TestValidateStillRejectsGenuinelyBadBenchtime(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "count") {
 		t.Errorf("error = %q, want a plain parse-failure message, not the count-form explanation", err.Error())
+	}
+}
+
+func TestLoadDefaultsMinEffectPctWhenOmitted(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.yaml")
+	os.WriteFile(p, []byte("benchmarks:\n  - BenchmarkParse\nscope:\n  - ./internal/...\n"), 0o644)
+
+	got, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.MinEffectPct != Default().MinEffectPct {
+		t.Errorf("MinEffectPct = %v, want default %v", got.MinEffectPct, Default().MinEffectPct)
+	}
+	if Default().MinEffectPct != 1.0 {
+		t.Errorf("Default().MinEffectPct = %v, want 1.0", Default().MinEffectPct)
+	}
+}
+
+func TestLoadHonorsExplicitMinEffectPct(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.yaml")
+	os.WriteFile(p, []byte(
+		"benchmarks:\n  - BenchmarkParse\nscope:\n  - ./internal/...\nmin_effect_pct: 2.5\n"), 0o644)
+
+	got, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.MinEffectPct != 2.5 {
+		t.Errorf("MinEffectPct = %v, want 2.5", got.MinEffectPct)
+	}
+}
+
+func TestValidateAcceptsMinEffectPctZero(t *testing.T) {
+	c := Default()
+	c.MinEffectPct = 0
+	if err := c.Validate(); err != nil {
+		t.Errorf("Validate() with min_effect_pct: 0 = %v, want nil", err)
 	}
 }
 
