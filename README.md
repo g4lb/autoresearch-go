@@ -256,6 +256,15 @@ Stated plainly, because performance tools that oversell are worse than useless:
   0.05 threshold no matter how large or how clean the real improvement is. Every
   experiment would be discarded on a technicality, not on its merits. `config.yaml`
   refuses `count` below 4 rather than let that happen silently.
+- **Measurement overhead has diminishing returns below `benchtime: 1s`.** Each
+  measured round pays roughly 380 ms of `go test` process startup on top of the
+  configured `benchtime`, measured on this machine, and a default experiment runs
+  22 rounds (baseline + candidate, interleaved). At `benchtime: 1s` that overhead is
+  about 27 % of a round's wall time; drop to `50ms` and it rises to about 70 %. Tuning
+  `benchtime` down to make a run finish faster mostly buys back fixed per-round
+  startup cost, not measurement time, and a shorter `benchtime` also means fewer
+  benchmark iterations per round to average over — so past a point it trades run
+  speed for noisier numbers rather than a proportionally faster run.
 
 ### Repos with no benchmarks
 

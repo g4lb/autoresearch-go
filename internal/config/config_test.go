@@ -86,6 +86,44 @@ func TestValidateAcceptsTheSignificanceFloor(t *testing.T) {
 	}
 }
 
+func TestValidateExplainsWhyTheCountFormIsRejected(t *testing.T) {
+	// go test -benchtime accepts a fixed-iteration-count form ("100x"),
+	// which is a perfectly legal value for the real flag — so the rejection
+	// here must explain that it is a deliberate policy decision, not just
+	// fail to parse as a duration and leave the user thinking they made a
+	// typo.
+	c := Default()
+	c.Benchtime = "100x"
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("Validate() = nil for benchtime: 100x, want error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "100x") {
+		t.Errorf("error = %q, want it to name the offending value", msg)
+	}
+	if !strings.Contains(msg, "count") && !strings.Contains(msg, "Nx") {
+		t.Errorf("error = %q, want it to name the count form", msg)
+	}
+	if !strings.Contains(msg, "1s") {
+		t.Errorf("error = %q, want a valid example such as \"1s\"", msg)
+	}
+}
+
+func TestValidateStillRejectsGenuinelyBadBenchtime(t *testing.T) {
+	// A plain typo must still be reported as a parse failure, not
+	// misdiagnosed as the deliberately-unsupported count form.
+	c := Default()
+	c.Benchtime = "banana"
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("Validate() = nil for benchtime: banana, want error")
+	}
+	if strings.Contains(err.Error(), "count") {
+		t.Errorf("error = %q, want a plain parse-failure message, not the count-form explanation", err.Error())
+	}
+}
+
 func TestTimeoutDuration(t *testing.T) {
 	c := Default()
 	c.Timeout = "90s"

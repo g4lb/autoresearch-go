@@ -163,7 +163,12 @@ func renderConfig(cfg config.Config) []byte {
 	b.WriteString("# you accept more experiments coming back DISCARD on noise alone.\n")
 	fmt.Fprintf(&b, "count: %d\n\n", cfg.Count)
 
-	b.WriteString("# Benchtime is passed to `go test -benchtime` for each round.\n")
+	b.WriteString("# Benchtime is passed to `go test -benchtime` for each round. It must be a\n")
+	b.WriteString("# duration (e.g. 1s, 200ms) — go test -benchtime's fixed-iteration-count form\n")
+	b.WriteString("# (e.g. 100x) is deliberately not accepted. A fixed count makes rounds\n")
+	b.WriteString("# incomparable: a candidate that is twice as fast finishes in half the wall\n")
+	b.WriteString("# time and is therefore measured under different thermal conditions, which is\n")
+	b.WriteString("# exactly what the interleaved A/B design exists to eliminate.\n")
 	fmt.Fprintf(&b, "benchtime: %s\n\n", cfg.Benchtime)
 
 	b.WriteString("# Race enables -race during the correctness gate (never during measurement,\n")

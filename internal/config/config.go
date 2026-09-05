@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -93,6 +94,13 @@ func (c Config) Validate() error {
 		}
 	}
 	if _, err := time.ParseDuration(c.Benchtime); err != nil {
+		if isBenchCountForm(c.Benchtime) {
+			return fmt.Errorf("benchtime %q uses go test -benchtime's fixed-iteration-count form (Nx), "+
+				"which is deliberately unsupported here: a fixed count makes rounds incomparable, because "+
+				"a candidate that is twice as fast finishes in half the wall time and is therefore measured "+
+				"under different thermal conditions — exactly what the interleaved A/B design exists to "+
+				"eliminate. Use a duration instead, e.g. benchtime: 1s", c.Benchtime)
+		}
 		return fmt.Errorf("benchtime %q is not a duration: %w", c.Benchtime, err)
 	}
 	if _, err := c.TimeoutDuration(); err != nil {
@@ -102,6 +110,18 @@ func (c Config) Validate() error {
 		return errors.New("gomaxprocs must not be negative")
 	}
 	return nil
+}
+
+// benchCountForm matches go test -benchtime's fixed-iteration-count form,
+// e.g. "100x": one or more digits followed by a literal "x". That form is a
+// legal value for the real `go test -benchtime` flag, which is exactly why
+// Validate's rejection of it needs to explain itself rather than just fail
+// to parse as a duration — a user who wrote it did not make a typo.
+var benchCountForm = regexp.MustCompile(`^[0-9]+x$`)
+
+// isBenchCountForm reports whether s is go test -benchtime's Nx count form.
+func isBenchCountForm(s string) bool {
+	return benchCountForm.MatchString(s)
 }
 
 // TimeoutDuration parses Timeout.
