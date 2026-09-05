@@ -177,10 +177,40 @@ func checkCPU() Finding {
 	}
 }
 
+// linuxPaths holds the filesystem sources that the Linux-specific checks
+// read from. Tests substitute alternate paths here so the parsing and
+// severity logic can be exercised on any platform, without touching the
+// real /sys or /proc filesystem. Production code always uses
+// defaultLinuxPaths.
+type linuxPaths struct {
+	// governor is the CPU scaling governor file for cpu0.
+	governor string
+	// loadAvg is the kernel's load-average pseudo-file.
+	loadAvg string
+}
+
+// defaultLinuxPaths are the real paths used outside of tests.
+//
+// governor was once (wrongly) "/proc/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor",
+// which does not exist on any Linux system. Reading a nonexistent path is
+// indistinguishable from "cpufreq not available" (both are os.IsNotExist),
+// so that bug silently reported "unknown" on every machine instead of
+// failing loudly. The correct path lives under /sys, not /proc/sys.
+var defaultLinuxPaths = linuxPaths{
+	governor: "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor",
+	loadAvg:  "/proc/loadavg",
+}
+
 // checkLoadAverage checks the 1-minute load average where available.
 func checkLoadAverage() Finding {
-	// Try to read from /proc/loadavg (Linux only).
-	content, err := os.ReadFile("/proc/loadavg")
+	return checkLoadAverageAt(defaultLinuxPaths.loadAvg)
+}
+
+// checkLoadAverageAt is checkLoadAverage with an injectable source, so it
+// can be tested on every platform against synthetic files instead of the
+// real /proc/loadavg.
+func checkLoadAverageAt(path string) Finding {
+	content, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// File doesn't exist; on macOS or Windows, load average is not readily available.
@@ -190,11 +220,12 @@ func checkLoadAverage() Finding {
 				Severity: SeverityNotApplicable,
 			}
 		}
-		// Some other error reading the file.
+		// Some other error reading the file (e.g. permission denied): the
+		// check did not actually run, so it must not count as a pass.
 		return Finding{
 			Name:     "load",
-			Detail:   fmt.Sprintf("1-minute load average: unknown (error reading /proc/loadavg: %v)", err),
-			Severity: SeverityOK,
+			Detail:   fmt.Sprintf("1-minute load average: not checked (error reading %s: %v)", path, err),
+			Severity: SeverityNotApplicable,
 		}
 	}
 
@@ -202,8 +233,8 @@ func checkLoadAverage() Finding {
 	if len(parts) < 1 {
 		return Finding{
 			Name:     "load",
-			Detail:   "1-minute load average: unknown (parse error)",
-			Severity: SeverityOK,
+			Detail:   "1-minute load average: not checked (parse error: empty content)",
+			Severity: SeverityNotApplicable,
 		}
 	}
 
@@ -212,8 +243,8 @@ func checkLoadAverage() Finding {
 	if err != nil {
 		return Finding{
 			Name:     "load",
-			Detail:   "1-minute load average: unknown (parse error)",
-			Severity: SeverityOK,
+			Detail:   fmt.Sprintf("1-minute load average: not checked (parse error: %q is not a number)", loadStr),
+			Severity: SeverityNotApplicable,
 		}
 	}
 
@@ -242,26 +273,44 @@ func checkDarwin() Finding {
 
 // checkLinux checks the CPU scaling governor.
 func checkLinux() Finding {
-	const governorPath = "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+	return checkLinuxAt(defaultLinuxPaths.governor)
+}
 
+// checkLinuxAt is checkLinux with an injectable governor path, so the
+// missing/unreadable/parsing logic can be exercised on every platform
+// against synthetic files instead of the real /sys filesystem.
+func checkLinuxAt(governorPath string) Finding {
 	content, err := os.ReadFile(governorPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Missing cpufreq is normal on VMs/containers; report unknown.
+			// Missing cpufreq is normal on VMs/containers without frequency
+			// scaling; the check simply did not run, which is not a pass.
 			return Finding{
 				Name:     "cpufreq",
-				Detail:   "CPU scaling governor: unknown (cpufreq not available, likely VM or container)",
-				Severity: SeverityOK,
+				Detail:   "CPU scaling governor: not checked (cpufreq not available, likely VM or container)",
+				Severity: SeverityNotApplicable,
 			}
 		}
-		// Some other error reading the file.
+		if os.IsPermission(err) {
+			// The file exists but we couldn't read it. Distinct from
+			// "missing" so a permissions problem doesn't masquerade as a
+			// normal VM/container environment.
+			return Finding{
+				Name:     "cpufreq",
+				Detail:   fmt.Sprintf("CPU scaling governor: not checked (permission denied reading %s)", governorPath),
+				Severity: SeverityNotApplicable,
+			}
+		}
+		// Some other error reading the file: the check did not run, so it
+		// must not count as a pass.
 		return Finding{
 			Name:     "cpufreq",
-			Detail:   fmt.Sprintf("CPU scaling governor: unknown (error reading %s: %v)", governorPath, err),
-			Severity: SeverityOK,
+			Detail:   fmt.Sprintf("CPU scaling governor: not checked (error reading %s: %v)", governorPath, err),
+			Severity: SeverityNotApplicable,
 		}
 	}
 
+	// /sys files (like /proc files) commonly end in a trailing newline.
 	governor := strings.TrimSpace(string(content))
 	severity := SeverityOK
 	if governor != "performance" {
