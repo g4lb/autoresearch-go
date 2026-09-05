@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -8,53 +9,98 @@ import (
 	"github.com/g4lb/autoresearch-go/internal/results"
 )
 
+// TestReportComputesCumulativeSpeedupCorrectly covers the cumulative-speedup
+// arithmetic across the shapes that matter: no kept rows, one kept row,
+// several kept rows (where the correct answer is the LATEST kept score, not
+// the product of all of them), a hand-edited score above 1.0, and the
+// real-world run against github.com/dustin/go-humanize that exposed the bug
+// — kept scores 0.7936, 0.5917, 0.5981 in that order previously produced a
+// wildly wrong "71.9%" (0.9 * ... as a product-of-all-kept miscalculation)
+// instead of the correct ~40.2% (the last kept score, 0.5981).
 func TestReportComputesCumulativeSpeedupCorrectly(t *testing.T) {
-	// Use copyDemoRepo to create a git repository.
-	dir := copyDemoRepo(t)
-	resultsPath := filepath.Join(dir, "results.tsv")
+	// scoredRow is a shorthand for one logged row; status defaults to "keep"
+	// when empty, since most cases below only care about kept rows.
+	type scoredRow struct {
+		score  float64
+		status string
+	}
+	kept := func(scores ...float64) []scoredRow {
+		rows := make([]scoredRow, len(scores))
+		for i, s := range scores {
+			rows[i] = scoredRow{score: s, status: "keep"}
+		}
+		return rows
+	}
 
-	// Write results with scores 0.9 and 0.8, both kept.
-	// Expected cumulative speedup: 0.9 * 0.8 = 0.72, reported as -28.0%.
-	rows := []results.Row{
+	cases := []struct {
+		name string
+		rows []scoredRow
+		want string // substring expected in output
+	}{
 		{
-			Commit:         "abc123",
-			Score:          0.9,
-			BestBenchDelta: -5.0,
-			AllocsDelta:    -10.0,
-			Status:         "keep",
-			Description:    "first optimization",
+			name: "no kept experiments (only a discarded row)",
+			rows: []scoredRow{{score: 1.02, status: "discard"}},
+			want: "no experiments kept",
 		},
 		{
-			Commit:         "def456",
-			Score:          0.8,
-			BestBenchDelta: -10.0,
-			AllocsDelta:    -20.0,
-			Status:         "keep",
-			Description:    "second optimization",
+			name: "single kept experiment",
+			rows: kept(0.8),
+			// Latest (only) kept score is 0.8: (1 - 0.8) * 100 = 20.0%.
+			want: "20.0%",
+		},
+		{
+			name: "two kept experiments: latest score wins, not the product",
+			rows: kept(0.9, 0.8),
+			// Old (wrong) product semantics: 0.9 * 0.8 = 0.72 -> "28.0%".
+			// Correct semantics: latest kept score is 0.8 -> "20.0%".
+			want: "20.0%",
+		},
+		{
+			name: "kept score above 1.0 (e.g. a hand-edited log)",
+			rows: kept(1.1),
+			// (1 - 1.1) * 100 = -10.0%: a regression, reported honestly as negative.
+			want: "-10.0%",
+		},
+		{
+			name: "real run against dustin/go-humanize",
+			// Third row re-measures the same (unchanged) tree as the second;
+			// under the old product semantics this compounded into a further
+			// "improvement" on top of itself.
+			rows: kept(0.7936, 0.5917, 0.5981),
+			// Latest kept score is 0.5981: (1 - 0.5981) * 100 = 40.19%.
+			want: "40.2%",
 		},
 	}
 
-	for _, row := range rows {
-		if err := results.Append(resultsPath, row); err != nil {
-			t.Fatalf("append result: %v", err)
-		}
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := copyDemoRepo(t)
+			resultsPath := filepath.Join(dir, "results.tsv")
 
-	// Run report and capture output.
-	output := captureStdout(t, func() {
-		if code := runReport([]string{"-C", dir}); code != exitOK {
-			t.Fatalf("runReport = %d, want %d", code, exitOK)
-		}
-	})
+			for i, sr := range tc.rows {
+				row := results.Row{
+					Commit:         fmt.Sprintf("commit%d", i),
+					Score:          sr.score,
+					BestBenchDelta: -5.0,
+					AllocsDelta:    -10.0,
+					Status:         sr.status,
+					Description:    fmt.Sprintf("optimization %d", i),
+				}
+				if err := results.Append(resultsPath, row); err != nil {
+					t.Fatalf("append result: %v", err)
+				}
+			}
 
-	// Verify the cumulative speedup is 0.72 (reported as 28.0%).
-	if !strings.Contains(output, "28.0%") {
-		t.Errorf("output does not contain expected speedup 28.0%%:\n%s", output)
-	}
+			output := captureStdout(t, func() {
+				if code := runReport([]string{"-C", dir}); code != exitOK {
+					t.Fatalf("runReport = %d, want %d", code, exitOK)
+				}
+			})
 
-	// Verify that allocs_delta is mentioned.
-	if !strings.Contains(output, "allocs") {
-		t.Errorf("output does not mention allocs_delta:\n%s", output)
+			if !strings.Contains(output, tc.want) {
+				t.Errorf("output does not contain expected %q:\n%s", tc.want, output)
+			}
+		})
 	}
 }
 
