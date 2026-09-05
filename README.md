@@ -10,11 +10,62 @@ Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch), w
 does this for a single-GPU LLM training loop. This does it for Go — where the metric
 is `ns/op` instead of `val_bpb`, and where **correctness is not optional**.
 
-> **Status: early development.** The measurement core is being built task by task.
-> The benchmark numbers in this README are real measurements from the toolchain, not
-> illustrations — see [Worked example](#worked-example).
+> **Status: v0.1.1, early but working.** Validated against three real libraries —
+> `go-humanize`, `mapstructure` and `google/uuid` — with measured wins in each. Every
+> number in this README and in [the case study](docs/case-study.md) is a real
+> measurement, never an illustration. The case study also records the bugs those runs
+> found in the tool itself.
 
 ---
+
+## Start here
+
+Open your coding agent inside the Go repository you want to make faster, and
+paste this:
+
+```text
+Install and run autoresearch-go on this repository, then optimize it.
+
+Setup:
+1. go install github.com/g4lb/autoresearch-go/cmd/autoresearch-go@latest
+   Make sure $(go env GOPATH)/bin is on PATH.
+2. autoresearch-go init
+   Show me the benchmarks it discovered. If it reports none, STOP and tell me:
+   this tool can only optimize what it can measure.
+3. git add -A && git commit -m "autoresearch-go init"
+4. autoresearch-go doctor
+   Show me any warnings. If the machine looks unfit to measure, stop and ask me
+   before continuing.
+5. autoresearch-go baseline -tag <today, e.g. sep6>
+
+Then:
+6. Read program.md in this repository, in full. It is your instruction set for
+   the rest of this run. Follow it exactly.
+
+Rules for the whole run:
+- Never edit program.md, .autoresearch/config.yaml, results.tsv, or anything
+  the harness writes. They are not yours.
+- Never pass -force to any autoresearch-go command.
+- One idea per experiment. Commit before each eval.
+- KEEP means the commit stays. Anything else means git reset --hard HEAD~1.
+
+Run the loop until I stop you.
+```
+
+That's the whole handoff. The agent installs the tool, sets the run up, and then
+follows `program.md` — which the harness generated for your repository and which
+tells it how to run the keep-or-discard loop.
+
+What you get back: one commit per accepted change on a branch named
+`autoresearch-go/<tag>`, and a `results.tsv` recording every experiment that was
+tried, including the ones that failed. `autoresearch-go report` summarizes it.
+
+Two things worth knowing before you start it:
+
+- **It needs benchmarks.** The tool optimizes what it can measure, and refuses to
+  guess. See [Repos with no benchmarks](#repos-with-no-benchmarks).
+- **Numbers are only as good as the machine.** Run `doctor` and read it. A
+  thermally throttled laptop on battery produces noise dressed as data.
 
 ## The idea
 
