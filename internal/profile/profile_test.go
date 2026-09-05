@@ -177,9 +177,9 @@ func TestCaptureMultiPackage(t *testing.T) {
 		t.Fatalf("Dirs = %v, want %v", dirs, want)
 	}
 
-	// Mutation evidence: prove the fixture actually bites go test's own
-	// restriction, so a regression back to `go test ./...` would be caught.
-	// recorded before/after run of this same assertion against Capture.
+	// Prove the fixture actually bites go test's own restriction, so a
+	// regression back to `go test ./...` would be caught here rather than
+	// only on a real multi-package repository.
 	badTmp := t.TempDir()
 	r := runner.New(root, 30*time.Second, nil)
 	badResult, err := r.BenchProfile(ctx, "./...", "Benchmark.*", "20ms",
