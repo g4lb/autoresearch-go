@@ -310,6 +310,12 @@ not a redefinition of "significant"; `autoresearch-go eval`'s output calls out a
 benchmark that is significant at `alpha` but did not clear the corrected bar,
 rather than silently calling it "not significant."
 
+A discard distinguishes the two ways rule 1 and rule 2 can fail.
+`no_significant_improvement` means nothing measurably moved.
+`improvement_below_min_effect` means the change really did speed things up,
+by less than `min_effect_pct` — worth knowing, because it says the idea was
+directionally right rather than inert.
+
 `allocs/op` and `B/op` are measured and shown to the agent as hints, but never scored.
 
 `base_ns` is **not** fixed for the whole run. `baseline` pins two things that are
@@ -343,7 +349,12 @@ Stated plainly, because performance tools that oversell are worse than useless:
   correction directly targets the multiple-comparisons inflation, and the effect
   floor throws out wins too small to matter even when real — but they reduce the
   false-`KEEP` rate, they do not (and cannot) eliminate it. Treat a single `KEEP`
-  as evidence worth banking, not as proof the change works.
+  as evidence worth banking, not as proof the change works. On a machine doing
+  other work, a no-op's measured delta can land several percent from zero with a
+  convincing p-value — this project's own integration test caught one at −2.8%,
+  p=0.004, while an unrelated build was running. `min_effect_pct` is the knob for
+  this: raise it on a noisy machine, since it costs you only wins smaller than
+  the noise you cannot measure anyway.
 - **Laptops are noisy.** macOS P/E core scheduling makes numbers jump. Interleaving and
   `-count` mitigate it and `doctor` warns you, but a quiet Linux box gives cleaner
   results.

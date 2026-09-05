@@ -26,6 +26,7 @@ type Reason string
 const (
 	ReasonImproved         Reason = "improved"
 	ReasonNoImprovement    Reason = "no_significant_improvement"
+	ReasonBelowMinEffect   Reason = "improvement_below_min_effect"
 	ReasonGuardRegression  Reason = "guard_regression"
 	ReasonScope            Reason = "scope_violation"
 	ReasonConfigChanged    Reason = "config_changed"
@@ -87,6 +88,10 @@ func Gate(status Status, reason Reason, message string) Result {
 //     spurious "significant" improvement even when nothing changed);
 //     dividing alpha by k is the standard correction.
 //
+// A change that clears 2b but misses 2a discards with
+// ReasonBelowMinEffect rather than ReasonNoImprovement: it measurably
+// worked, it was just too small to bank.
+//
 // Delta.Significant always means "significant at the raw, uncorrected
 // alpha" — that stays the honest statistic for a human or agent reading the
 // report. The Bonferroni correction applied in rule 2b is a KEEP-decision
@@ -138,6 +143,20 @@ func Decide(in Input) Result {
 			Reason:  ReasonImproved,
 			Score:   in.Score,
 			Message: fmt.Sprintf("score %.4f (%+.2f%%)", in.Score, (in.Score-1)*100),
+		}
+	}
+
+	// Distinguish "your idea did nothing" from "your idea worked, but by
+	// less than the minimum effect size". Both discard, but they call for
+	// different next moves, and reporting the second as the first would
+	// tell an agent its change had no effect when it measurably did.
+	if improved && in.Score < 1 {
+		return Result{
+			Status: StatusDiscard,
+			Reason: ReasonBelowMinEffect,
+			Score:  in.Score,
+			Message: fmt.Sprintf("score %.4f (%+.2f%%), a real improvement but below the %.1f%% minimum effect size",
+				in.Score, (in.Score-1)*100, in.MinEffectPct),
 		}
 	}
 	return Result{

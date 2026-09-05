@@ -103,8 +103,19 @@ fields:
 
 `status` is one of `KEEP`, `DISCARD`, `FAIL`, `CRASH`. `reason` is a stable,
 machine-readable code (e.g. `improved`, `no_significant_improvement`,
-`guard_regression`, `scope_violation`, `new_test_file`, `build_failed`,
-`vet_failed`, `tests_failed`, `timeout`). `score` is the geometric mean of
+`improvement_below_min_effect`, `guard_regression`, `scope_violation`,
+`new_test_file`, `build_failed`, `vet_failed`, `tests_failed`, `timeout`).
+
+Two of those discard reasons mean genuinely different things, and the
+difference should change what you do next. `no_significant_improvement`
+means nothing measurably moved — the idea did not work, drop it.
+`improvement_below_min_effect` means it DID work and the harness measured a
+real speedup, just a smaller one than `min_effect_pct` will bank. That is a
+signal the direction is right: a variation on the same idea with a larger
+effect may well clear the bar, whereas the same idea applied to a hotter
+path almost certainly would. Do not read it as failure.
+
+`score` is the geometric mean of
 `new_ns/base_ns` across the declared benchmarks — below 1 is faster.
 `message` is a human-readable one-liner suitable for a log row.
 `regressions`, when present, lists which benchmarks tripped the regression

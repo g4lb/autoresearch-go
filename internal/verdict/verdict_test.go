@@ -1,6 +1,7 @@
 package verdict
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/g4lb/autoresearch-go/internal/bench"
@@ -154,8 +155,30 @@ func TestMinEffectJustAboveThresholdDiscards(t *testing.T) {
 		MinEffectPct:  1,
 	}
 	got := Decide(in)
+	// The reason is improvement_below_min_effect, not
+	// no_significant_improvement: the change measurably worked, it was
+	// just too small to bank. Reporting it as "no improvement" would tell
+	// an agent its idea did nothing when it demonstrably did.
+	if got.Status != StatusDiscard || got.Reason != ReasonBelowMinEffect {
+		t.Fatalf("got %s/%s, want DISCARD/improvement_below_min_effect for a significant win below the threshold", got.Status, got.Reason)
+	}
+	if !strings.Contains(got.Message, "below the 1.0% minimum effect size") {
+		t.Errorf("Message = %q, want it to say the win was below the minimum effect size", got.Message)
+	}
+}
+
+func TestNoImprovementKeepsItsOwnReason(t *testing.T) {
+	// Nothing significant improved at all: this really is "no significant
+	// improvement", and must not be mislabelled as a below-threshold win.
+	in := Input{
+		Deltas:        []bench.Delta{d("A", -0.4, false)},
+		Score:         0.996,
+		MaxRegressPct: 5,
+		MinEffectPct:  1,
+	}
+	got := Decide(in)
 	if got.Status != StatusDiscard || got.Reason != ReasonNoImprovement {
-		t.Fatalf("got %s/%s, want DISCARD/no_improvement for score just above the min-effect threshold", got.Status, got.Reason)
+		t.Fatalf("got %s/%s, want DISCARD/no_significant_improvement when nothing cleared significance", got.Status, got.Reason)
 	}
 }
 

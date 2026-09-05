@@ -695,14 +695,16 @@ func BenchmarkNoAlloc(b *testing.B) {
 
 	// The gate chain and measurement must have completed normally — a
 	// missing allocs/op hint is not a reason to fail or crash the
-	// experiment. res.Reason must be one of the three post-measurement
-	// reasons, not any gate-failure reason.
+	// experiment. res.Reason must be one of the post-measurement reasons,
+	// not any gate-failure reason.
 	switch res.Reason {
-	case verdict.ReasonImproved, verdict.ReasonNoImprovement, verdict.ReasonGuardRegression:
+	case verdict.ReasonImproved, verdict.ReasonNoImprovement,
+		verdict.ReasonBelowMinEffect, verdict.ReasonGuardRegression:
 		// expected: a normal, scored outcome.
 	default:
 		t.Fatalf("status/reason = %s/%s, want a normal scored outcome (improved, "+
-			"no_significant_improvement, or guard_regression), not a gate failure\nlog:\n%s",
+			"no_significant_improvement, improvement_below_min_effect, or "+
+			"guard_regression), not a gate failure\nlog:\n%s",
 			res.Status, res.Reason, env.Log)
 	}
 

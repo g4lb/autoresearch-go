@@ -144,6 +144,16 @@ real optimizations stand — each showed its own benchmark improving
 significantly, verified against the library's frozen tests — but the count
 and the third row do not.
 
+The keep rule has since been tightened a second time, for a different
+reason: a `KEEP` now additionally requires a geomean improvement of at least
+`min_effect_pct` (default 1%) and a Bonferroni-corrected significance
+threshold. None of the verdicts above change under that rule — the two
+genuine keeps scored 0.79 and 0.59, far below the 0.99 bar — but the first
+row (`0.9962`, a sanity check with no code change) would now report the more
+precise reason `improvement_below_min_effect` rather than
+`no_significant_improvement`. See [Limitations](../README.md#limitations)
+for the measured false-keep rate that motivated the change.
+
 **Fixed in v0.1.1** by advancing the measurement baseline: after a keep, the
 pinned worktree moves to the newly kept commit, so each evaluation asks "did
 THIS change help?" rather than "is the current state better than where we

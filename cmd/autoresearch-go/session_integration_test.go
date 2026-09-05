@@ -82,6 +82,18 @@ func TestSessionMultiExperimentSequence(t *testing.T) {
 	}
 	cfg.Count = 10
 	cfg.Benchtime = "20ms"
+	// Raise the minimum effect size well above the default 1%. Steps 2 and
+	// 4 are genuine no-ops that MUST discard, and on a loaded shared runner
+	// a no-op's measured delta can land several percent away from zero with
+	// a convincing p-value — a real observation: a run of this test
+	// concurrent with an unrelated compile scored a no-op at -2.8%,
+	// p=0.004, which clears both the default 1% floor and the corrected
+	// significance bar. That is the residual Type-I error the README's
+	// Limitations section documents, not a bug in the decision rule, but it
+	// makes for a flaky test. The KEEP steps' true effect is roughly an
+	// order of magnitude, so a 15% floor leaves them enormous headroom
+	// while putting any plausible noise-level "win" firmly out of reach.
+	cfg.MinEffectPct = 15
 	if err := os.WriteFile(configPath, renderConfig(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
