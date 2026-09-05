@@ -179,7 +179,6 @@ func TestCaptureMultiPackage(t *testing.T) {
 
 	// Mutation evidence: prove the fixture actually bites go test's own
 	// restriction, so a regression back to `go test ./...` would be caught.
-	// See docs/superpowers/run-log/profile-multipackage-fix.md for the
 	// recorded before/after run of this same assertion against Capture.
 	badTmp := t.TempDir()
 	r := runner.New(root, 30*time.Second, nil)
