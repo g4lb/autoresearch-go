@@ -179,11 +179,14 @@ func (r *Runner) Bench(ctx context.Context, pattern, benchtime string) (*Result,
 }
 
 // BenchProfile runs benchmarks with CPU and memory profiling.
-// cpuProfile and memProfile are the output file paths for the profiles.
-// binaryPath is the path where the compiled test binary will be written.
-func (r *Runner) BenchProfile(ctx context.Context, pattern, benchtime, cpuProfile, memProfile, binaryPath string) (*Result, error) {
+// pkg is the package pattern to test, e.g. "." or "./sub/dir" — never
+// "./..." here, because the go tool refuses -cpuprofile/-memprofile when
+// the pattern matches more than one package. cpuProfile and memProfile are
+// the output file paths for the profiles. binaryPath is the path where the
+// compiled test binary will be written.
+func (r *Runner) BenchProfile(ctx context.Context, pkg, pattern, benchtime, cpuProfile, memProfile, binaryPath string) (*Result, error) {
 	return r.Go(ctx,
-		"test", "./...",
+		"test", pkg,
 		"-run", "^$",
 		"-bench", pattern,
 		"-benchtime", benchtime,

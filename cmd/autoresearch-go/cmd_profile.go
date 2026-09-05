@@ -50,22 +50,48 @@ func runProfile(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	benchPattern := state.BenchPattern(cfg.Benchmarks)
-	report, err := profile.Capture(ctx, root, benchPattern, cfg.Benchtime, profileDir, timeout)
+	// Resolve which package(s) actually declare the benchmarks in scope:
+	// `go test -cpuprofile` refuses a pattern matching more than one
+	// package, so ./... is not an option here (unlike eval's plain
+	// `go test ./... -bench`, which has no such restriction).
+	dirs, err := profile.Dirs(root, cfg.Benchmarks)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "autoresearch-go profile: %v\n", err)
 		return exitUsage
 	}
 
-	// Print the output.
-	fmt.Println("CPU (top 15) ------------------------------------------")
-	fmt.Println(report.CPUTop)
-	fmt.Println()
-	fmt.Println("Allocations (top 15) ----------------------------------")
-	fmt.Println(report.MemTop)
-	fmt.Println()
-	fmt.Printf("profiles written to .autoresearch/profiles/{cpu,mem}.out\n")
-	fmt.Printf("open with: go tool pprof -http=: .autoresearch/profiles/cpu.out\n")
+	benchPattern := state.BenchPattern(cfg.Benchmarks)
+	report, err := profile.Capture(ctx, root, dirs, benchPattern, cfg.Benchtime, profileDir, timeout)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "autoresearch-go profile: %v\n", err)
+		return exitUsage
+	}
+
+	// Print the output, grouped by package: an unlabelled merge of two
+	// packages' hot spots would be actively misleading.
+	multi := len(report.Packages) > 1
+	for _, pkg := range report.Packages {
+		if multi {
+			fmt.Printf("=== package %s ===\n", pkg.Dir)
+		}
+		fmt.Println("CPU (top 15) ------------------------------------------")
+		fmt.Println(pkg.CPUTop)
+		fmt.Println()
+		fmt.Println("Allocations (top 15) ----------------------------------")
+		fmt.Println(pkg.MemTop)
+		fmt.Println()
+	}
+
+	if multi {
+		fmt.Println("profiles written under .autoresearch/profiles/<package>/{cpu,mem}.out:")
+		for _, pkg := range report.Packages {
+			fmt.Printf("  %s: %s, %s\n", pkg.Dir, pkg.CPUPath, pkg.MemPath)
+		}
+		fmt.Printf("open with: go tool pprof -http=: <path above>\n")
+	} else {
+		fmt.Printf("profiles written to .autoresearch/profiles/{cpu,mem}.out\n")
+		fmt.Printf("open with: go tool pprof -http=: .autoresearch/profiles/cpu.out\n")
+	}
 
 	return exitOK
 }
