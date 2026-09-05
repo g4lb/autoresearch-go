@@ -42,22 +42,46 @@ func TestSessionMultiExperimentSequence(t *testing.T) {
 	}
 
 	dir := copyDemoRepo(t)
+
+	// Swap in a deliberately much slower "before" implementation of
+	// CountWords than testdata/demo ships. This test's KEEP steps (3 and
+	// 5) must reliably beat Mann-Whitney significance even on a noisy,
+	// shared CI runner: with n rounds per side, significance is a matter
+	// of RANK ORDER across rounds, and a ~2x true effect can still let a
+	// noisy baseline round come in faster than a noisy candidate round
+	// (that is exactly what produced p=0.056 and a wrongly-DISCARDed
+	// step 3 on GitHub Actions). Padding the "before" state with obviously
+	// redundant repeated work — see stageOriginalSlow and
+	// redundantStageAPasses below — pushes the true effect size to
+	// roughly an order of magnitude, so no plausible amount of runner
+	// noise can invert the ranking. testdata/demo itself is left
+	// untouched: other tests, including the published case study, depend
+	// on its exact current numbers.
+	wordcountPath := filepath.Join(dir, "wordcount.go")
+	if err := os.WriteFile(wordcountPath, []byte(stageOriginalSlow), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-q", "-m", "test fixture: much slower original CountWords for CI noise robustness")
+
 	mustInit(t, dir)
 
 	// Shrink count/benchtime so six full eval cycles finish quickly.
-	// Count must stay >= config.Validate's significance floor (4); 5
-	// matches the rest of the suite's settled-on value, giving headroom
-	// (min two-sided p ~= 0.008) against ordinary measurement noise.
-	// Benchtime at the top of the documented 20-50ms window keeps each
-	// round fast while still collecting enough samples for the
-	// Mann-Whitney test to separate a real win from noise reliably.
+	// Count must stay >= config.Validate's significance floor (4). 10
+	// (config's own default) gives more rank-order headroom than the
+	// minimum against ordinary measurement noise than a smaller count
+	// would, at the cost of roughly double the measurement rounds.
+	// Benchtime at the bottom of the documented 20-50ms window keeps each
+	// round fast, which matters more now that count is doubled; the
+	// enlarged true effect size (see above) more than compensates for any
+	// extra per-round noise a short benchtime lets through.
 	configPath := filepath.Join(dir, config.Path)
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.Count = 5
-	cfg.Benchtime = "50ms"
+	cfg.Count = 10
+	cfg.Benchtime = "20ms"
 	if err := os.WriteFile(configPath, renderConfig(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +93,6 @@ func TestSessionMultiExperimentSequence(t *testing.T) {
 		t.Fatalf("runBaseline = %d, want %d", code, exitOK)
 	}
 
-	wordcountPath := filepath.Join(dir, "wordcount.go")
 	testPath := filepath.Join(dir, "wordcount_test.go")
 	originalTestContent, err := os.ReadFile(filepath.Join(demoRepoSrc(t), "wordcount_test.go"))
 	if err != nil {
@@ -238,8 +261,14 @@ func TestSessionMultiExperimentSequence(t *testing.T) {
 	// bank the no-op in step 4 as a third "win", inflating this number
 	// well past what two real optimizations alone produce) would fall
 	// outside it.
+	// The band is wide (and high) because both stages now carry the
+	// redundantOriginalPasses/redundantStageAPasses padding described
+	// above stageOriginalSlow: the real, order-of-magnitude true effect at
+	// each step compounds to a cumulative speedup near (but, since real
+	// measurement varies some run to run, not pinned to) the roughly
+	// 99% two 10x-ish steps in a row multiply out to.
 	speedup := parseCumulativeSpeedup(t, reportOut)
-	const minSpeedup, maxSpeedup = 45.0, 82.0
+	const minSpeedup, maxSpeedup = 90.0, 99.99
 	if speedup < minSpeedup || speedup > maxSpeedup {
 		t.Errorf("cumulative speedup = %.1f%%, want in [%.1f%%, %.1f%%] — a real two-step improvement on "+
 			"CountWords, not overstated by a phantom third win\nreport:\n%s", speedup, minSpeedup, maxSpeedup, reportOut)
@@ -290,33 +319,95 @@ func parseCumulativeSpeedup(t *testing.T, reportOut string) float64 {
 	return v
 }
 
+// stageOriginalSlow replaces testdata/demo's CountWords (used verbatim for
+// every other test in this repository) with an implementation that does the
+// exact same deliberately-quadratic per-rune concatenation, but additionally
+// repeats the whole computation redundantOriginalPasses times, keeping only
+// the last (correct) result. That padding has no bearing on correctness or
+// on the "real" optimization story stageABuilderOnly and
+// stageBFullyOptimized tell below — it exists solely so step 3's true
+// effect size is large enough (see the comment above copyDemoRepo's call in
+// TestSessionMultiExperimentSequence) to survive a noisy, loaded CI runner.
+const stageOriginalSlow = `// Package demo is a fixture for autoresearch-go's own integration tests.
+// The implementation is intentionally suboptimal.
+package demo
+
+import "strings"
+
+// redundantOriginalPasses inflates CountWords' cost well beyond its
+// algorithmic cost alone, purely for this test's statistical robustness
+// under CI noise (see stageOriginalSlow's doc comment). It has no bearing
+// on correctness: every pass recomputes the same result and only the last
+// is kept.
+const redundantOriginalPasses = 40
+
+// CountWords returns how many times each lowercase word appears in s.
+// Words are separated by whitespace; surrounding punctuation is stripped.
+func CountWords(s string) map[string]int {
+	var counts map[string]int
+	for pass := 0; pass < redundantOriginalPasses; pass++ {
+		counts = map[string]int{}
+		for _, field := range strings.Fields(s) {
+			word := ""
+			for _, r := range field {
+				if r >= 'A' && r <= 'Z' {
+					r = r + ('a' - 'A')
+				}
+				if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+					// Deliberately quadratic: rebuilds the string every rune.
+					word = word + string(r)
+				}
+			}
+			if word != "" {
+				counts[word]++
+			}
+		}
+	}
+	return counts
+}
+`
+
 // stageABuilderOnly is the fixture's CountWords with its quadratic
 // per-rune string concatenation replaced by a strings.Builder, while still
-// tokenizing with strings.Fields. This alone removes the overwhelming
-// majority of the baseline's ~6800 allocs/op (one small string allocation
-// per character across every word in the input), cutting measured time on
-// BenchmarkCountWords roughly in half.
+// tokenizing with strings.Fields. Algorithmically this alone removes the
+// overwhelming majority of stageOriginalSlow's allocations (one small
+// string allocation per character across every word in the input) and cuts
+// per-call time roughly in half; combined with dropping
+// redundantOriginalPasses' 40x padding down to redundantStageAPasses' much
+// smaller 6x (see that constant's doc comment), step 3's measured true
+// effect is roughly an order of magnitude, not roughly half.
 const stageABuilderOnly = `// Package demo is a fixture for autoresearch-go's own integration tests.
 package demo
 
 import "strings"
 
+// redundantStageAPasses is the same statistical-robustness padding
+// stageOriginalSlow's redundantOriginalPasses documents, just at a much
+// smaller multiple. Keeping some padding here (rather than dropping it to
+// 1 in this same step) is what gives step 5 — measured against THIS state,
+// not the original — its own double-digit-multiple true effect size once
+// stageBFullyOptimized removes it entirely.
+const redundantStageAPasses = 6
+
 // CountWords returns how many times each lowercase word appears in s.
 // Words are separated by whitespace; surrounding punctuation is stripped.
 func CountWords(s string) map[string]int {
-	counts := map[string]int{}
-	for _, field := range strings.Fields(s) {
-		var b strings.Builder
-		for _, r := range field {
-			if r >= 'A' && r <= 'Z' {
-				r = r + ('a' - 'A')
+	var counts map[string]int
+	for pass := 0; pass < redundantStageAPasses; pass++ {
+		counts = map[string]int{}
+		for _, field := range strings.Fields(s) {
+			var b strings.Builder
+			for _, r := range field {
+				if r >= 'A' && r <= 'Z' {
+					r = r + ('a' - 'A')
+				}
+				if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+					b.WriteRune(r)
+				}
 			}
-			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-				b.WriteRune(r)
+			if b.Len() > 0 {
+				counts[b.String()]++
 			}
-		}
-		if b.Len() > 0 {
-			counts[b.String()]++
 		}
 	}
 	return counts
@@ -325,8 +416,11 @@ func CountWords(s string) map[string]int {
 
 // stageBFullyOptimized further replaces strings.Fields tokenization and
 // rune-by-rune iteration with a single byte-indexed pass over the whole
-// string, and preallocates the result map. Measured against stageA (not
-// the original baseline), this is a second, independent improvement.
+// string, and preallocates the result map — and drops stageABuilderOnly's
+// redundantStageAPasses padding entirely (a single pass, not 6). Measured
+// against stageA (not the original), this combination is a second,
+// independent improvement of roughly an order of magnitude, comfortably
+// clear of noise for the same rank-order reason step 3 needs to be.
 const stageBFullyOptimized = `// Package demo is a fixture for autoresearch-go's own integration tests.
 package demo
 
