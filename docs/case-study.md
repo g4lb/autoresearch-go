@@ -166,6 +166,80 @@ validate the loop; they were not. The flaw only appears once several
 experiments have accumulated, which is exactly the condition an overnight run
 creates and a short demonstration does not.
 
+## Two more libraries, under v0.1.1
+
+The run above used v0.1.0. After the keep rule was fixed, the tool was run
+against two further real libraries to see whether the fixes held and whether
+more real-repo bugs surfaced.
+
+### github.com/mitchellh/mapstructure @ `8508981`
+
+Reflection-heavy decoding, four core `Decode` benchmarks, 5 test files
+frozen. Three experiments, three keeps, no discards.
+
+| Benchmark | before | after | allocations |
+|---|---:|---:|---|
+| `Decode` | 1254 ns/op | 989.2 ns/op | 38 → 28 |
+| `DecodeBasic` | 4597 ns/op | 2705 ns/op | **93 → 52** |
+| `DecodeMap` | 842.1 ns/op | 721.3 ns/op | 28 → 23 |
+| `DecodeSlice` | 646.8 ns/op | 523.2 ns/op | 21 → 16 |
+
+**Cumulative: −25.2%.**
+
+The three changes, all in `decodeStructFromMap`, all found from the profile:
+
+1. `dataValKeys` was a `map[reflect.Value]struct{}` that is only ever ranged
+   over, never indexed — paying `reflect.Value` hashing for nothing when
+   `MapKeys()` already returns a slice. Dropped, and the remaining
+   `dataValKeysUnused` map presized.
+2. Struct tags were parsed with `strings.Split`, allocating a slice for every
+   field of every struct on every decode. Replaced with `strings.IndexByte`
+   scanning. This is where most of the allocation reduction came from.
+3. The field slice was grown from empty despite `NumField()` being known, and
+   an error slice was allocated eagerly even when there were no errors.
+
+**This run also validated the v0.1.1 arithmetic against reality.** `report`
+computed the cumulative figure as the product of the kept scores
+(0.857 × 0.917 × 0.951 = 0.748, i.e. −25.2%). Measuring the original commit
+against the final state directly gives a geomean of 0.753 — within half a
+percentage point. The advancing-baseline design and the product arithmetic
+agree with independently measured ground truth.
+
+### github.com/google/uuid @ `2d3c2a9`
+
+Chosen as the honest-negative test: already tightly optimised, with `Parse`
+at 11.79 ns/op and **zero allocations**. The expectation was that the tool
+would correctly find nothing.
+
+That expectation was wrong. One change was kept:
+
+```
+BenchmarkUUID_String-10       -17.7%  [p=0.000 n=10]
+BenchmarkUUID_MarshalJSON-10   -5.5%  [p=0.001 n=10]
+BenchmarkParse-10              +0.3%  (not significant)
+BenchmarkNew-10                +0.1%  (not significant)
+```
+
+`encodeHex` made five calls to `hex.Encode`; replacing them with a
+table-driven inline encoder made `String` measurably faster. Direct
+measurement of the original against the final state confirms it: 18.78 →
+15.30 ns/op, about −18.5%, against the harness's −17.7%.
+
+Two honest notes on this one. First, an earlier attempt crashed on an unused
+import — the same mistake made on `go-humanize`, caught the same way, which
+says something about what an agent actually gets wrong. Second, the −5.5% on
+`MarshalJSON` could not be confirmed by a quick direct check, which showed no
+difference. That check was three sequential runs per side taken minutes
+apart — precisely the methodology the interleaved harness exists to replace —
+so for an effect that small the harness's ten interleaved rounds are the more
+trustworthy measurement, not the spot check.
+
+### What the two extra runs did not find
+
+No new bugs in the tool. The three found by the first run — the keep rule,
+`profile` on multi-package repositories, and `report`'s arithmetic — were the
+crop, and the fixes held across two further libraries with different shapes.
+
 ## Caveats
 
 - Six experiments on one machine. A single run on a single library is a
