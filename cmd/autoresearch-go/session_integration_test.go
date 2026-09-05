@@ -225,6 +225,7 @@ func TestSessionMultiExperimentSequence(t *testing.T) {
 	if !strings.Contains(reportOut, "crashed: 0") {
 		t.Errorf("report = %q, want \"crashed: 0\"", reportOut)
 	}
+	t.Logf("session report:\n%s", reportOut)
 
 	// The cumulative speedup, under an advancing baseline, is the PRODUCT
 	// of the two kept scores (see cmd_report.go's printReportSummary), not
