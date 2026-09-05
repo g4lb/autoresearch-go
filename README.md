@@ -210,6 +210,7 @@ An agent optimizing your code can "win" by cheating. Each route is closed:
 | Weaken or delete a test | `_test.go` files are hashed at baseline and **restored** before every run — edits are erased, not argued about |
 | Delete the work the benchmark measures | the frozen tests still run and still assert the real behavior |
 | Add an easier benchmark | any `_test.go` absent from the frozen manifest is rejected |
+| Replace a frozen `_test.go` with a symlink to a file outside the repo | `Snapshot` refuses to freeze a symlinked test file, and `Restore` refuses to write through one that appears later — both fail loudly instead of writing through the link |
 | Edit files outside the agreed area | `scope` violations fail before anything is even built |
 | Bank measurement noise as a win | a Mann-Whitney test must clear `p < 0.05`; noise is `DISCARD` |
 | Speed up A by wrecking B | any significant regression over 5 % rejects the change outright |

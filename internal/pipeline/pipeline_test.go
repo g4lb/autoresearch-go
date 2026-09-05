@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -414,6 +415,51 @@ func BenchmarkEasy(b *testing.B) {
 	}
 	if res.Status != verdict.StatusFail || res.Reason != verdict.ReasonNewTestFile {
 		t.Fatalf("status = %s/%s, want FAIL/new_test_file\nlog:\n%s", res.Status, res.Reason, env.Log)
+	}
+}
+
+func TestEvalFailsOnSymlinkSwappedTestFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation typically needs elevation on Windows")
+	}
+	if testing.Short() {
+		t.Skip("runs the real correctness gates; skipped in -short")
+	}
+	env := setupRun(t)
+
+	// The agent mid-run: delete a frozen test file and put a symlink to some
+	// other file in its place. Restore would otherwise write the frozen
+	// test's content straight through the link.
+	outside := t.TempDir()
+	victim := filepath.Join(outside, "victim.txt")
+	const victimContent = "do not touch this file\n"
+	if err := os.WriteFile(victim, []byte(victimContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	testFile := filepath.Join(env.Root, "wordcount_test.go")
+	if err := os.Remove(testFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, testFile); err != nil {
+		t.Fatal(err)
+	}
+	commit(t, env.Root, "swap frozen test file for a symlink")
+
+	res, _, err := Eval(context.Background(), env.Options())
+	if err != nil {
+		t.Fatalf("Eval returned a Go error %v, want a FAIL verdict instead", err)
+	}
+	if res.Status != verdict.StatusFail || res.Reason != verdict.ReasonSymlinkSwap {
+		t.Fatalf("status = %s/%s, want FAIL/symlink_swap\nlog:\n%s", res.Status, res.Reason, env.Log)
+	}
+
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatalf("read outside file: %v", err)
+	}
+	if string(got) != victimContent {
+		t.Errorf("outside file content = %q, want unchanged %q", got, victimContent)
 	}
 }
 

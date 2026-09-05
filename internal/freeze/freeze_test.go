@@ -1,8 +1,11 @@
 package freeze
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -202,5 +205,122 @@ func TestRejectsPathTraversal(t *testing.T) {
 	_, err = Restore(root, store, absManifest)
 	if err == nil {
 		t.Errorf("Restore with absolute path should error, got nil")
+	}
+}
+
+// TestRestoreRefusesToWriteThroughSymlink reproduces the serious attack: the
+// agent removes a normally-frozen file and replaces it with a symlink to a
+// file outside the repository. os.WriteFile follows symlinks, so a naive
+// Restore would write the frozen test's content through the link, clobbering
+// whatever it points at. Restore must refuse, and — this is the part an
+// error-after-writing implementation would get wrong — the outside file's
+// content must be completely untouched.
+func TestRestoreRefusesToWriteThroughSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation typically needs elevation on Windows")
+	}
+	root, store, m := setup(t)
+
+	// A file in a wholly separate temp directory: the "any user file"
+	// outside the repository that Path B targets.
+	outside := t.TempDir()
+	victim := filepath.Join(outside, "victim.txt")
+	const victimContent = "do not touch this file\n"
+	writeFile(t, victim, victimContent)
+
+	// The agent mid-run: delete the frozen file, put a symlink in its place.
+	testFile := filepath.Join(root, "pkg/a_test.go")
+	if err := os.Remove(testFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, testFile); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Restore(root, store, m)
+	if err == nil {
+		t.Fatal("Restore through a symlink should error, got nil")
+	}
+	if !errors.Is(err, ErrSymlink) {
+		t.Errorf("err = %v, want it to wrap ErrSymlink", err)
+	}
+
+	// The load-bearing assertion: the outside file must be byte-for-byte
+	// unchanged. An implementation that writes first and errors afterward
+	// would pass an error-only check while still destroying this file.
+	got := readFile(t, victim)
+	if got != victimContent {
+		t.Errorf("outside file content = %q, want unchanged %q", got, victimContent)
+	}
+}
+
+// TestSnapshotRefusesSymlinkedTestFile reproduces Path A: a _test.go that is
+// already a symlink at baseline time. Snapshot must refuse and name the
+// offending path, catching this before the run ever starts rather than on
+// every eval afterward.
+func TestSnapshotRefusesSymlinkedTestFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation typically needs elevation on Windows")
+	}
+	root := t.TempDir()
+	store := filepath.Join(root, StoreDir)
+
+	outside := t.TempDir()
+	target := filepath.Join(outside, "target.go")
+	writeFile(t, target, "package pkg // target\n")
+
+	linkPath := filepath.Join(root, "pkg/link_test.go")
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, linkPath); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Snapshot(root, store, []string{"pkg/link_test.go"})
+	if err == nil {
+		t.Fatal("Snapshot of a symlinked test file should error, got nil")
+	}
+	if !errors.Is(err, ErrSymlink) {
+		t.Errorf("err = %v, want it to wrap ErrSymlink", err)
+	}
+	if !strings.Contains(err.Error(), "pkg/link_test.go") {
+		t.Errorf("err = %v, want it to name the offending path", err)
+	}
+}
+
+// TestVerifyReportsSymlinkedPathAsChanged asserts Verify treats a frozen
+// path that has become a symlink as changed, the same way it already treats
+// a deleted file — Verify is what surfaces tampering, so it must not stay
+// silent about this route.
+func TestVerifyReportsSymlinkedPathAsChanged(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation typically needs elevation on Windows")
+	}
+	root, _, m := setup(t)
+
+	// The link's target holds byte-for-byte the same content setup() froze.
+	// If Verify fell back to a plain content comparison instead of checking
+	// for a symlink, it would read through the link, see matching content,
+	// and wrongly call this path unchanged — this must be caught by the
+	// symlink check itself, not incidentally by a content mismatch.
+	outside := t.TempDir()
+	target := filepath.Join(outside, "target.txt")
+	writeFile(t, target, "package pkg // original\n")
+
+	testFile := filepath.Join(root, "pkg/a_test.go")
+	if err := os.Remove(testFile); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, testFile); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := Verify(root, m)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if len(changed) != 1 || changed[0] != "pkg/a_test.go" {
+		t.Errorf("changed = %v, want [pkg/a_test.go] for a symlinked path", changed)
 	}
 }

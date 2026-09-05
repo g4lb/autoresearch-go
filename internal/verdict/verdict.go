@@ -30,6 +30,7 @@ const (
 	ReasonScope           Reason = "scope_violation"
 	ReasonConfigChanged   Reason = "config_changed"
 	ReasonNewTestFile     Reason = "new_test_file"
+	ReasonSymlinkSwap     Reason = "symlink_swap"
 	ReasonBuild           Reason = "build_failed"
 	ReasonVet             Reason = "vet_failed"
 	ReasonTests           Reason = "tests_failed"

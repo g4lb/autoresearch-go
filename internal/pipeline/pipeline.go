@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -138,6 +139,17 @@ func Eval(ctx context.Context, o Options) (verdict.Result, *Measurements, error)
 	}
 	restored, err := freeze.Restore(o.Root, filepath.Join(o.StateDir, freeze.StoreDir), man)
 	if err != nil {
+		// A frozen test file that has been replaced by a symlink is tampering,
+		// not a harness malfunction: report it as a FAIL verdict (so the run
+		// gets a row in results.tsv and an actionable message) rather than
+		// propagating a Go error, which would abort the harness with no
+		// signal at all. Any other Restore error (a genuine I/O failure)
+		// still propagates as-is.
+		if errors.Is(err, freeze.ErrSymlink) {
+			return verdict.Gate(verdict.StatusFail, verdict.ReasonSymlinkSwap,
+				fmt.Sprintf("%v — a frozen test file must remain a regular file; "+
+					"restore it and rerun", err)), nil, nil
+		}
 		return verdict.Result{}, nil, err
 	}
 	if len(restored) > 0 && o.Log != nil {
