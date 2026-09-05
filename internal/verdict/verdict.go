@@ -58,6 +58,11 @@ type Result struct {
 	Score       float64       `json:"score"`
 	Message     string        `json:"message"`
 	Regressions []bench.Delta `json:"regressions,omitempty"`
+	// Warnings say when the measurement behind this result is too weak to
+	// support it: benchmath's own warnings about each comparison, plus the
+	// harness's check that a KEEP was statistically reachable at all. They
+	// never change the decision — they explain what it can and cannot mean.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Gate builds a Result for a failed correctness stage, before measurement.
@@ -97,6 +102,16 @@ func Gate(status Status, reason Reason, message string) Result {
 // report. The Bonferroni correction applied in rule 2b is a KEEP-decision
 // threshold layered on top, not a redefinition of what "significant" means.
 func Decide(in Input) Result {
+	// k is the number of benchmarks compared in this experiment — the
+	// family size for the Bonferroni correction in rule 2b. len(in.Deltas)
+	// is never 0 in practice (bench.CompareAll errors out on an empty
+	// comparison), but guard against division by zero defensively anyway.
+	k := len(in.Deltas)
+	if k < 1 {
+		k = 1
+	}
+	warnings := measurementWarnings(in.Deltas, k)
+
 	var regressions []bench.Delta
 	for _, d := range in.Deltas {
 		if d.Significant && d.PctChange > in.MaxRegressPct {
@@ -117,17 +132,10 @@ func Decide(in Input) Result {
 			Score:       in.Score,
 			Message:     fmt.Sprintf("regression guard tripped (limit %+.1f%%): %s", in.MaxRegressPct, sb.String()),
 			Regressions: regressions,
+			Warnings:    warnings,
 		}
 	}
 
-	// k is the number of benchmarks compared in this experiment — the
-	// family size for the Bonferroni correction below. len(in.Deltas) is
-	// never 0 in practice (bench.CompareAll errors out on an empty
-	// comparison), but guard against division by zero defensively anyway.
-	k := len(in.Deltas)
-	if k < 1 {
-		k = 1
-	}
 	improved := false
 	for _, d := range in.Deltas {
 		correctedAlpha := d.Alpha / float64(k)
@@ -139,10 +147,11 @@ func Decide(in Input) Result {
 	minEffectThreshold := 1 - in.MinEffectPct/100
 	if in.Score < minEffectThreshold && improved {
 		return Result{
-			Status:  StatusKeep,
-			Reason:  ReasonImproved,
-			Score:   in.Score,
-			Message: fmt.Sprintf("score %.4f (%+.2f%%)", in.Score, (in.Score-1)*100),
+			Status:   StatusKeep,
+			Reason:   ReasonImproved,
+			Score:    in.Score,
+			Message:  fmt.Sprintf("score %.4f (%+.2f%%)", in.Score, (in.Score-1)*100),
+			Warnings: warnings,
 		}
 	}
 
@@ -157,14 +166,127 @@ func Decide(in Input) Result {
 			Score:  in.Score,
 			Message: fmt.Sprintf("score %.4f (%+.2f%%), a real improvement but below the %.1f%% minimum effect size",
 				in.Score, (in.Score-1)*100, in.MinEffectPct),
+			Warnings: warnings,
 		}
 	}
 	return Result{
-		Status:  StatusDiscard,
-		Reason:  ReasonNoImprovement,
-		Score:   in.Score,
-		Message: fmt.Sprintf("score %.4f (%+.2f%%), no significant improvement", in.Score, (in.Score-1)*100),
+		Status:   StatusDiscard,
+		Reason:   ReasonNoImprovement,
+		Score:    in.Score,
+		Message:  fmt.Sprintf("score %.4f (%+.2f%%), no significant improvement", in.Score, (in.Score-1)*100),
+		Warnings: warnings,
 	}
+}
+
+// measurementWarnings gathers everything that qualifies how far the numbers
+// in a Result can be trusted: benchmath's own warnings about each comparison,
+// then the harness's check that a KEEP was statistically reachable at all.
+func measurementWarnings(deltas []bench.Delta, k int) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, d := range deltas {
+		for _, w := range d.Warnings {
+			if seen[w] {
+				continue
+			}
+			seen[w] = true
+			out = append(out, w)
+		}
+	}
+	if w, ok := unreachableAlphaWarning(deltas, k); ok {
+		out = append(out, w)
+	}
+	return out
+}
+
+// unreachableAlphaWarning reports when rule 2b cannot be satisfied by any
+// result whatsoever, so the run is incapable of a KEEP before it starts.
+//
+// The Mann-Whitney U test has a floor on the p-value it can produce for a
+// given pair of sample sizes: the two samples can be maximally separated and
+// the test still only reaches 2/C(n1+n2, n1), because that is the fraction of
+// orderings at least as extreme as the observed one. If the Bonferroni-
+// corrected threshold alpha/k falls below that floor for EVERY benchmark, no
+// benchmark can clear it and every experiment discards no matter what the
+// agent does. config.Validate enforces a count floor for k=1; this is the
+// same footgun at k benchmarks, which the validator cannot see because it
+// does not know how many benchmarks will be compared.
+//
+// KEEP needs only one benchmark to clear the threshold, so this warns only
+// when none of them can.
+func unreachableAlphaWarning(deltas []bench.Delta, k int) (string, bool) {
+	if len(deltas) == 0 {
+		return "", false
+	}
+	worstN := 0
+	alpha := 0.0
+	for _, d := range deltas {
+		corrected := d.Alpha / float64(k)
+		if minAchievableP(d.NBase, d.NCand) < corrected {
+			return "", false // this one can clear it; that is enough for a KEEP
+		}
+		n := d.NBase
+		if d.NCand < n {
+			n = d.NCand
+		}
+		if n > worstN {
+			worstN, alpha = n, d.Alpha
+		}
+	}
+	need := countForAlpha(alpha / float64(k))
+	msg := fmt.Sprintf("no KEEP was reachable: comparing %d benchmark(s) corrects the significance "+
+		"threshold to %.5f, but with %d rounds per side the test cannot produce a p-value below %.5f "+
+		"however large the improvement is", k, alpha/float64(k), worstN, minAchievableP(worstN, worstN))
+	if need > 0 {
+		msg += fmt.Sprintf(" — raise count to at least %d", need)
+	} else {
+		msg += " — raise count, or measure fewer benchmarks"
+	}
+	return msg, true
+}
+
+// minAchievableP is the smallest two-sided p-value the Mann-Whitney U test
+// can return for samples of size n1 and n2: 2/C(n1+n2, n1). It matches
+// benchmath's generated uTestMinP table exactly (0.3333 at 2, 0.1000 at 3,
+// 0.02857 at 4, 0.00794 at 5) without duplicating it.
+func minAchievableP(n1, n2 int) float64 {
+	if n1 < 1 || n2 < 1 {
+		return 1
+	}
+	p := 2 / binom(n1+n2, n1)
+	if p > 1 {
+		return 1
+	}
+	return p
+}
+
+// binom returns C(n, k) as a float64, multiplying and dividing in step so
+// the intermediate value stays near the result rather than overflowing
+// through a factorial.
+func binom(n, k int) float64 {
+	if k < 0 || k > n {
+		return 0
+	}
+	if k > n-k {
+		k = n - k
+	}
+	c := 1.0
+	for i := 0; i < k; i++ {
+		c = c * float64(n-i) / float64(i+1)
+	}
+	return c
+}
+
+// countForAlpha returns the smallest number of rounds per side at which the
+// U test can produce a p-value below alpha, or 0 when no practical count
+// does (the search stops at 50, far past any sensible benchmark budget).
+func countForAlpha(alpha float64) int {
+	for n := 2; n <= 50; n++ {
+		if minAchievableP(n, n) < alpha {
+			return n
+		}
+	}
+	return 0
 }
 
 // ExitCode maps a Status to the process exit code documented in program.md.

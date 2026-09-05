@@ -97,7 +97,8 @@ fields:
   "reason": "improved",
   "score": 0.9123,
   "message": "score 0.9123 (-8.77%)",
-  "regressions": []
+  "regressions": [],
+  "warnings": []
 }
 ```
 
@@ -120,6 +121,20 @@ path almost certainly would. Do not read it as failure.
 `message` is a human-readable one-liner suitable for a log row.
 `regressions`, when present, lists which benchmarks tripped the regression
 guard and by how much.
+
+`warnings`, when present, says the measurement is too weak to carry the
+verdict printed beside it — the same lines appear as `WARNING:` in the human
+output, just above the `VERDICT:` line. They never change the decision; they
+tell you not to over-read it. Two you may see:
+
+- **too few rounds for a confidence interval** — the numbers are still the
+  measured medians, but the interval around them is unbounded. Raise `count`.
+- **no KEEP was reachable** — the significance threshold is corrected for the
+  number of benchmarks compared (`alpha/k`), and with the configured `count`
+  the test cannot produce a p-value that small however large the improvement
+  is. Every experiment will `DISCARD` until `count` is raised, so treat this
+  as a broken configuration and stop rather than continuing to burn the night
+  on experiments that cannot be banked.
 
 **What `base_ns` means changes as the run progresses.** It is NOT always the
 commit `baseline` recorded — it is whatever the harness's measurement

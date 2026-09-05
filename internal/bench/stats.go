@@ -30,6 +30,14 @@ type Delta struct {
 	// Significant reports P < Alpha.
 	Significant  bool
 	NBase, NCand int
+	// Warnings are benchmath's own warnings about this comparison and the
+	// two summaries behind it, deduplicated. They say when a comparison is
+	// underpowered — too few observations for a finite confidence interval,
+	// or too few for the U test to reach significance at all — which is
+	// precisely when the numbers beside them must not be taken at face
+	// value. benchmath's documentation says they should be shown to the
+	// user, so they are carried out of this package rather than dropped.
+	Warnings []string
 }
 
 // Compare tests one benchmark's unit across two measurement sets.
@@ -72,6 +80,7 @@ func Compare(base, cand *Set, name, unit string) (Delta, error) {
 		Significant: cmp.P < cmp.Alpha,
 		NBase:       cmp.N1,
 		NCand:       cmp.N2,
+		Warnings:    dedupeWarnings(bSum.Warnings, cSum.Warnings, cmp.Warnings),
 	}, nil
 }
 
@@ -119,4 +128,24 @@ func GeoMean(deltas []Delta) (float64, error) {
 		sum += math.Log(d.Ratio)
 	}
 	return math.Exp(sum / float64(len(deltas))), nil
+}
+
+// dedupeWarnings flattens benchmath's warning lists into messages, dropping
+// repeats. The baseline and candidate summaries warn about the same sample
+// size in the same words, and printing that twice per benchmark buries the
+// distinct warnings among duplicates.
+func dedupeWarnings(lists ...[]error) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, list := range lists {
+		for _, err := range list {
+			msg := err.Error()
+			if seen[msg] {
+				continue
+			}
+			seen[msg] = true
+			out = append(out, msg)
+		}
+	}
+	return out
 }

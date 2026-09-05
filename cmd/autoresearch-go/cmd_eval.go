@@ -76,27 +76,10 @@ func runEval(args []string) int {
 		return exitUsage
 	}
 
-	configPath := filepath.Join(root, config.Path)
-	// Distinguish "no config yet" from "a config exists but is invalid":
-	// init refuses to overwrite an existing config.yaml without -force, so
-	// telling an agent to run init when one is already there just hands it
-	// a second error and no path forward. Only a genuinely absent config
-	// should point at init; an existing-but-invalid one (including a
-	// count below the significance floor, now that Validate enforces it)
-	// needs the human to fix the named field in place.
-	if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: no config at %s\n", configPath)
-		fmt.Fprintln(os.Stderr, "run `autoresearch-go init` first.")
-		return exitUsage
+	cfg, _, code := loadConfig("eval", root)
+	if code != exitOK {
+		return code
 	}
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", err)
-		fmt.Fprintf(os.Stderr, "%s exists but is invalid; correct the named field and try again "+
-			"(init will refuse to regenerate it without -force).\n", configPath)
-		return exitUsage
-	}
-
 	base, err := state.LoadBaseline(filepath.Join(stateDir, state.BaselineFile))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", err)
@@ -361,7 +344,23 @@ func printHuman(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta, cfg 
 	}
 	fmt.Printf("\nSCORE  %.3f  (%+.1f%%)   min effect: %.1f%%   guard: max regress %+.1f%% < %.1f%% %s\n",
 		res.Score, (res.Score-1)*100, cfg.MinEffectPct, worst, cfg.MaxRegressPct, guard)
+	printWarnings(res.Warnings)
 	fmt.Printf("\nVERDICT: %s\n", res.Status)
+}
+
+// printWarnings renders what qualifies the numbers above it: benchmath's
+// warnings about underpowered comparisons, and the harness's own check that
+// a KEEP was reachable at all (see verdict.Result.Warnings). They go after
+// the score they are about but BEFORE the verdict line, because that is
+// where a skimming reader — or an agent grepping run.log — stops.
+func printWarnings(warnings []string) {
+	if len(warnings) == 0 {
+		return
+	}
+	fmt.Println()
+	for _, w := range warnings {
+		fmt.Printf("WARNING: %s\n", w)
+	}
 }
 
 // allocsFor finds the allocs/op delta for the named benchmark.

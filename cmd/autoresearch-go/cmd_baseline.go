@@ -74,12 +74,9 @@ func runBaseline(args []string) int {
 		return exitUsage
 	}
 
-	configPath := filepath.Join(root, config.Path)
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
-		fmt.Fprintln(os.Stderr, "run `autoresearch-go init` first.")
-		return exitUsage
+	cfg, configPath, code := loadConfig("baseline", root)
+	if code != exitOK {
+		return code
 	}
 
 	// A dirty tree means the commit baseline pins would not reflect what is

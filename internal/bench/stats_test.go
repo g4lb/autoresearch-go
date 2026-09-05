@@ -2,6 +2,7 @@ package bench
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -152,4 +153,84 @@ func TestCompareAllSortedByName(t *testing.T) {
 	if ds[0].Name != "BenchmarkA" || ds[1].Name != "BenchmarkB" || ds[2].Name != "BenchmarkC" {
 		t.Errorf("Names not in alphabetical order: %s, %s, %s", ds[0].Name, ds[1].Name, ds[2].Name)
 	}
+}
+
+// benchmath attaches warnings to its Summary and Comparison results and its
+// documentation says they "should be reported to the user". They are the only
+// signal that a comparison is underpowered — that the numbers printed next to
+// them cannot support the conclusion someone is about to draw — so Compare
+// must carry them out rather than drop them on the floor.
+
+func TestCompareSurfacesTooFewSamplesForAConfidenceInterval(t *testing.T) {
+	// At 95% confidence the median's interval needs >= 6 observations; with
+	// 5 it is ±∞ and benchmath says so on the Summary.
+	base := setOf(t, "BenchmarkX", 412.3, 401.1, 409.9, 415.0, 407.2)
+	cand := setOf(t, "BenchmarkX", 321.0, 318.4, 325.9, 319.1, 322.7)
+
+	d, err := Compare(base, cand, "BenchmarkX", UnitTime)
+	if err != nil {
+		t.Fatalf("Compare: %v", err)
+	}
+	if len(d.Warnings) == 0 {
+		t.Fatal("Warnings is empty; benchmath warned that 5 samples give no finite confidence interval")
+	}
+	if !hasSubstring(d.Warnings, "confidence interval") {
+		t.Errorf("Warnings = %q, want one naming the confidence interval", d.Warnings)
+	}
+}
+
+func TestCompareSurfacesTooFewSamplesToDetectADifference(t *testing.T) {
+	// The Mann-Whitney U test cannot produce p < 0.05 with 3 observations
+	// per side however far apart they are; benchmath warns on the Comparison.
+	base := setOf(t, "BenchmarkX", 400, 401, 402)
+	cand := setOf(t, "BenchmarkX", 100, 101, 102)
+
+	d, err := Compare(base, cand, "BenchmarkX", UnitTime)
+	if err != nil {
+		t.Fatalf("Compare: %v", err)
+	}
+	if !hasSubstring(d.Warnings, "detect a difference") {
+		t.Errorf("Warnings = %q, want one saying more samples are needed to detect a difference", d.Warnings)
+	}
+}
+
+func TestCompareReportsNoWarningsWhenWellPowered(t *testing.T) {
+	base := setOf(t, "BenchmarkX", 412.3, 401.1, 409.9, 415.0, 407.2, 410.4, 405.8, 413.1)
+	cand := setOf(t, "BenchmarkX", 321.0, 318.4, 325.9, 319.1, 322.7, 320.2, 323.8, 317.6)
+
+	d, err := Compare(base, cand, "BenchmarkX", UnitTime)
+	if err != nil {
+		t.Fatalf("Compare: %v", err)
+	}
+	if len(d.Warnings) != 0 {
+		t.Errorf("Warnings = %q, want none for 8 well-separated observations per side", d.Warnings)
+	}
+}
+
+func TestCompareDoesNotRepeatTheSameWarningPerSide(t *testing.T) {
+	// Baseline and candidate summaries produce the identical "need >= 6
+	// samples" text; printing it twice per benchmark is noise.
+	base := setOf(t, "BenchmarkX", 412.3, 401.1, 409.9, 415.0, 407.2)
+	cand := setOf(t, "BenchmarkX", 321.0, 318.4, 325.9, 319.1, 322.7)
+
+	d, err := Compare(base, cand, "BenchmarkX", UnitTime)
+	if err != nil {
+		t.Fatalf("Compare: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, w := range d.Warnings {
+		if seen[w] {
+			t.Errorf("Warnings repeats %q: %q", w, d.Warnings)
+		}
+		seen[w] = true
+	}
+}
+
+func hasSubstring(ss []string, sub string) bool {
+	for _, s := range ss {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }

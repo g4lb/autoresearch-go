@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/g4lb/autoresearch-go/internal/config"
 	"github.com/g4lb/autoresearch-go/internal/gitx"
 	"github.com/g4lb/autoresearch-go/internal/profile"
 	"github.com/g4lb/autoresearch-go/internal/state"
@@ -28,12 +27,9 @@ func runProfile(args []string) int {
 		return exitUsage
 	}
 
-	configPath := filepath.Join(root, config.Path)
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go profile: %v\n", err)
-		fmt.Fprintln(os.Stderr, "run `autoresearch-go init` first.")
-		return exitUsage
+	cfg, _, code := loadConfig("profile", root)
+	if code != exitOK {
+		return code
 	}
 
 	// Parse timeout.

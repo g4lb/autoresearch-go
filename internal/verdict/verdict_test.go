@@ -1,6 +1,7 @@
 package verdict
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -315,5 +316,69 @@ func TestGateProducesFail(t *testing.T) {
 	got := Gate(StatusFail, ReasonTests, "3 tests failed")
 	if got.Status != StatusFail || got.Reason != ReasonTests || got.Message == "" {
 		t.Fatalf("got %+v, want a populated FAIL", got)
+	}
+}
+
+// The Bonferroni correction in rule 2b divides alpha by the number of
+// benchmarks, but the Mann-Whitney U test has a floor on the p-value it can
+// produce for a given sample size: with n observations per side the smallest
+// attainable two-sided p is 2/C(2n,n), however far apart the two samples are.
+// When alpha/k drops below that floor, no change can ever be kept — the run
+// is incapable of a KEEP before it starts. config.Validate's count floor of 4
+// only accounts for k=1, so a repository with several benchmarks can land
+// here with a config the validator accepted.
+
+func TestDecideWarnsWhenCorrectedAlphaIsUnreachable(t *testing.T) {
+	// 7 benchmarks at count 5: corrected alpha is 0.05/7 = 0.00714, below
+	// the 0.00794 floor for 5-vs-5.
+	var deltas []bench.Delta
+	for i := 0; i < 7; i++ {
+		deltas = append(deltas, bench.Delta{
+			Name: fmt.Sprintf("BenchmarkX%d", i), Unit: bench.UnitTime,
+			Ratio: 0.5, PctChange: -50, P: 0.0079, Alpha: 0.05,
+			Significant: true, NBase: 5, NCand: 5,
+		})
+	}
+	res := Decide(Input{Deltas: deltas, Score: 0.5, MaxRegressPct: 5, MinEffectPct: 1})
+	if len(res.Warnings) == 0 {
+		t.Fatal("Warnings is empty; no KEEP is reachable at 7 benchmarks with 5 rounds per side")
+	}
+	joined := strings.Join(res.Warnings, "\n")
+	if !strings.Contains(joined, "no KEEP was reachable") {
+		t.Errorf("Warnings = %q, want one saying no KEEP was reachable", res.Warnings)
+	}
+	// 6 rounds per side put the floor at 2/C(12,6) = 0.00216, below the
+	// corrected 0.00714; 5 do not. Naming the number turns the warning into
+	// an instruction rather than a complaint.
+	if !strings.Contains(joined, "raise count to at least 6") {
+		t.Errorf("Warnings = %q, want the smallest count that would work", res.Warnings)
+	}
+}
+
+func TestDecideDoesNotWarnWhenTheSampleSizeSuffices(t *testing.T) {
+	deltas := []bench.Delta{
+		{Name: "BenchmarkA", Unit: bench.UnitTime, Ratio: 0.5, PctChange: -50,
+			P: 0.0001, Alpha: 0.05, Significant: true, NBase: 10, NCand: 10},
+		{Name: "BenchmarkB", Unit: bench.UnitTime, Ratio: 0.9, PctChange: -10,
+			P: 0.0001, Alpha: 0.05, Significant: true, NBase: 10, NCand: 10},
+	}
+	res := Decide(Input{Deltas: deltas, Score: 0.67, MaxRegressPct: 5, MinEffectPct: 1})
+	if len(res.Warnings) != 0 {
+		t.Errorf("Warnings = %q, want none: 0.05/2 is well above the 10-vs-10 floor", res.Warnings)
+	}
+	if res.Status != StatusKeep {
+		t.Errorf("Status = %v, want KEEP; the warning check must not change decisions", res.Status)
+	}
+}
+
+func TestDecideCarriesDeltaWarningsThrough(t *testing.T) {
+	deltas := []bench.Delta{
+		{Name: "BenchmarkA", Unit: bench.UnitTime, Ratio: 0.5, PctChange: -50,
+			P: 0.0001, Alpha: 0.05, Significant: true, NBase: 10, NCand: 10,
+			Warnings: []string{"need >= 6 samples for confidence interval at level 0.95"}},
+	}
+	res := Decide(Input{Deltas: deltas, Score: 0.5, MaxRegressPct: 5, MinEffectPct: 1})
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "confidence interval") {
+		t.Errorf("Warnings = %q, want benchmath's own warning carried through", res.Warnings)
 	}
 }

@@ -316,6 +316,25 @@ A discard distinguishes the two ways rule 1 and rule 2 can fail.
 by less than `min_effect_pct` — worth knowing, because it says the idea was
 directionally right rather than inert.
 
+### When the measurement cannot carry the verdict
+
+`eval` prints `WARNING:` lines above its verdict (and a `warnings` array in
+`--json`) when the statistics behind a result do not support reading it at face
+value. They never change the decision. Two matter:
+
+- **Too few rounds for a confidence interval.** At 95% confidence the median's
+  interval needs at least 6 observations per side; below that it is unbounded.
+  This is `benchmath`'s own warning, surfaced rather than swallowed.
+- **No `KEEP` was reachable.** The Mann-Whitney U test has a floor on the
+  p-value it can produce for a given sample size — with `n` rounds per side the
+  smallest attainable two-sided p is `2/C(2n,n)`, however far apart the two
+  samples are. Rule 2 divides `alpha` by the number of benchmarks, so enough
+  benchmarks push the corrected threshold below that floor and *every*
+  experiment discards no matter what the agent does. `count: 5` with 7
+  benchmarks is already there (`0.05/7 = 0.0071` against a floor of `0.0079`).
+  `config.Validate`'s `count >= 4` floor cannot catch this: it does not know how
+  many benchmarks a run will compare. The warning names the count to raise to.
+
 `allocs/op` and `B/op` are measured and shown to the agent as hints, but never scored.
 
 `base_ns` is **not** fixed for the whole run. `baseline` pins two things that are

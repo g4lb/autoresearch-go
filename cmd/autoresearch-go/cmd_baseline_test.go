@@ -292,3 +292,54 @@ func TestBaselineAcceptsEmptyBenchmarksList(t *testing.T) {
 		t.Fatalf("runBaseline with an empty benchmarks list = %d, want %d", code, exitOK)
 	}
 }
+
+// writeInvalidConfig replaces dir's generated config with one that Load
+// accepts syntactically but Validate rejects: count below the significance
+// floor. That is the realistic case — a repository configured before the
+// floor existed — and it is the one where "run init first" is a dead end,
+// since init refuses to overwrite an existing config without -force.
+func writeInvalidConfig(t *testing.T, dir string) {
+	t.Helper()
+	path := filepath.Join(dir, config.Path)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected a generated config at %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte("count: 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBaselineInvalidConfigDoesNotAdviseInit(t *testing.T) {
+	dir := copyDemoRepo(t)
+	mustInit(t, dir)
+	writeInvalidConfig(t, dir)
+
+	var code int
+	out := captureStderr(t, func() {
+		code = runBaseline([]string{"-C", dir, "-tag", "sep4"})
+	})
+	if code != exitUsage {
+		t.Fatalf("runBaseline = %d, want %d", code, exitUsage)
+	}
+	if strings.Contains(out, "init` first") {
+		t.Errorf("invalid config sends the user to init, which refuses to overwrite it:\n%s", out)
+	}
+	if !strings.Contains(out, "exists but is invalid") {
+		t.Errorf("stderr does not say the config exists but is invalid:\n%s", out)
+	}
+}
+
+func TestBaselineMissingConfigAdvisesInit(t *testing.T) {
+	dir := copyDemoRepo(t) // no mustInit: there is genuinely no config yet
+
+	var code int
+	out := captureStderr(t, func() {
+		code = runBaseline([]string{"-C", dir, "-tag", "sep4"})
+	})
+	if code != exitUsage {
+		t.Fatalf("runBaseline = %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(out, "init` first") {
+		t.Errorf("an absent config should point at init:\n%s", out)
+	}
+}

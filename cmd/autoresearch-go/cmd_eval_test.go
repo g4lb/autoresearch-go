@@ -1,15 +1,18 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/g4lb/autoresearch-go/internal/bench"
 	"github.com/g4lb/autoresearch-go/internal/config"
 	"github.com/g4lb/autoresearch-go/internal/gitx"
 	"github.com/g4lb/autoresearch-go/internal/results"
 	"github.com/g4lb/autoresearch-go/internal/state"
+	"github.com/g4lb/autoresearch-go/internal/verdict"
 )
 
 // These cover the command layer's own responsibilities — deriving the run
@@ -416,5 +419,54 @@ func TestEvalInvalidConfigDoesNotSuggestInit(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "correct") {
 		t.Errorf("stderr = %q, want guidance to correct the config in place", stderr)
+	}
+}
+
+// A measurement that cannot support its own verdict must say so where the
+// verdict is read. benchmath's warnings and the harness's reachability check
+// are worthless if they stop at the package boundary.
+
+func TestHumanOutputPrintsMeasurementWarnings(t *testing.T) {
+	res := verdict.Result{
+		Status: verdict.StatusDiscard, Reason: verdict.ReasonNoImprovement,
+		Score: 0.99, Message: "score 0.9900 (-1.00%), no significant improvement",
+		Warnings: []string{"need >= 6 samples for confidence interval at level 0.95"},
+	}
+	deltas := []bench.Delta{{
+		Name: "BenchmarkCountWords", Unit: bench.UnitTime, BaseCenter: 100, CandCenter: 99,
+		Ratio: 0.99, PctChange: -1, P: 0.4, Alpha: 0.05, NBase: 5, NCand: 5,
+	}}
+	cfg := config.Default()
+	out := captureStdout(t, func() { printHuman(res, deltas, nil, cfg) })
+
+	if !strings.Contains(out, "need >= 6 samples") {
+		t.Errorf("stdout = %q, want the measurement warning printed", out)
+	}
+	if !strings.Contains(out, "WARNING") {
+		t.Errorf("stdout = %q, want warnings labelled so they are not read as results", out)
+	}
+	if !strings.Contains(out, "VERDICT: DISCARD") {
+		t.Errorf("stdout = %q, want the verdict line still present", out)
+	}
+	if strings.Index(out, "need >= 6 samples") > strings.Index(out, "VERDICT:") {
+		t.Errorf("warning printed after the verdict, where a skimming reader stops:\n%s", out)
+	}
+}
+
+func TestJSONOutputIncludesMeasurementWarnings(t *testing.T) {
+	res := verdict.Result{
+		Status: verdict.StatusDiscard, Reason: verdict.ReasonNoImprovement, Score: 0.99,
+		Warnings: []string{"need >= 6 samples for confidence interval at level 0.95"},
+	}
+	out := captureStdout(t, func() { printJSON(res, nil, nil) })
+
+	var got struct {
+		Warnings []string `json:"warnings"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	if len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0], "need >= 6 samples") {
+		t.Errorf("warnings = %v, want the measurement warning", got.Warnings)
 	}
 }
