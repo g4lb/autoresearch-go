@@ -21,7 +21,12 @@ jobs:
         if: matrix.go != 'stable'
       - run: go test ./... -count=1
         if: matrix.go == 'stable'
-      - run: go test ./... -race -count=1
+      # -short on purpose: the measuring tests spend their wall time inside
+      # child `go test -bench` processes, which are compiled without -race and
+      # so are never instrumented. Re-running them here re-pays the whole
+      # benchmark cost for no extra race coverage. The step above already runs
+      # them once, unrestricted.
+      - run: go test ./... -race -short -count=1
         if: matrix.go == 'stable'
       - name: gofmt
         run: test -z "$(gofmt -l .)"
