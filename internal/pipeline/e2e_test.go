@@ -69,15 +69,30 @@ func runCLI(t *testing.T, bin string, args ...string) (output string, code int) 
 // shrinkConfigForSpeed lowers count and benchtime so the measurement phase
 // finishes in a few seconds instead of the ~20s the generated defaults
 // (count: 10, benchtime: 1s) would take. Count must stay >= config's
-// significance floor of 4 — this package's other Eval tests settled on 5
-// rounds / 50ms as fast and stable.
+// significance floor of 4, and — because this journey asserts a KEEP — well
+// clear of it; see the comment on the assignment below.
 func shrinkConfigForSpeed(t *testing.T, configPath string) {
 	t.Helper()
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		t.Fatalf("load generated config: %v", err)
 	}
-	cfg.Count = 5
+	// 8 rounds, not 5. The journey asserts that a large, real speedup comes
+	// back as KEEP, and KEEP needs statistical significance -- so `count`
+	// has to leave the test room to be significant, not just fast.
+	//
+	// At 5 v 5 the smallest two-sided p a rank test can produce is 2/C(10,5)
+	// = 0.0079, and reaching anything under alpha=0.05 requires almost
+	// perfect separation of all ten samples. A few overlapping pairs on a
+	// loaded CI runner push p past 0.05 and the journey fails on a genuine
+	// 64% speedup. At 8 v 8 the floor drops to 2/C(16,8) = 0.00016, which
+	// tolerates real overlap. It also clears the harness's own "need >= 6
+	// samples for confidence interval" warning, which was already telling us
+	// 5 was underpowered.
+	//
+	// The cost is 3 extra rounds per side at 50ms: fractions of a second
+	// against a journey that shells out to the real toolchain.
+	cfg.Count = 8
 	cfg.Benchtime = "50ms"
 	b, err := yaml.Marshal(cfg)
 	if err != nil {
