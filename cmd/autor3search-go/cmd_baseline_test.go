@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/g4lb/autoresearch-go/internal/config"
-	"github.com/g4lb/autoresearch-go/internal/freeze"
-	"github.com/g4lb/autoresearch-go/internal/gitx"
-	"github.com/g4lb/autoresearch-go/internal/results"
-	"github.com/g4lb/autoresearch-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/config"
+	"github.com/g4lb/autor3search-go/internal/freeze"
+	"github.com/g4lb/autor3search-go/internal/gitx"
+	"github.com/g4lb/autor3search-go/internal/results"
+	"github.com/g4lb/autor3search-go/internal/state"
 )
 
 func TestBaselineCreatesBranchAndFreezesTests(t *testing.T) {
@@ -22,8 +22,8 @@ func TestBaselineCreatesBranchAndFreezesTests(t *testing.T) {
 	}
 
 	br, _ := gitx.CurrentBranch(dir)
-	if br != "autoresearch-go/sep4" {
-		t.Errorf("branch = %q, want autoresearch-go/sep4", br)
+	if br != "autor3search-go/sep4" {
+		t.Errorf("branch = %q, want autor3search-go/sep4", br)
 	}
 	stateDir, err := state.StateDir(dir, "sep4")
 	if err != nil {
@@ -58,9 +58,9 @@ func TestBaselineWritesNothingIntoTheRepo(t *testing.T) {
 		t.Fatalf("runBaseline = %d", code)
 	}
 	for _, rel := range []string{
-		".autoresearch/frozen",
-		".autoresearch/baseline.json",
-		".autoresearch/worktrees",
+		".autor3search/frozen",
+		".autor3search/baseline.json",
+		".autor3search/worktrees",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); !os.IsNotExist(err) {
 			t.Errorf("%s exists inside the repository; harness state must be out of tree", rel)
@@ -183,10 +183,10 @@ func TestBaselineRollsBackBranchOnFailureAfterCreation(t *testing.T) {
 	} else if br != original {
 		t.Errorf("branch = %q after failed baseline, want back on %q", br, original)
 	}
-	if exists, err := gitx.BranchExists(dir, "autoresearch-go/sep6"); err != nil {
+	if exists, err := gitx.BranchExists(dir, "autor3search-go/sep6"); err != nil {
 		t.Fatal(err)
 	} else if exists {
-		t.Error("autoresearch-go/sep6 still exists after a failed baseline, want it deleted")
+		t.Error("autor3search-go/sep6 still exists after a failed baseline, want it deleted")
 	}
 }
 
@@ -220,10 +220,10 @@ func TestBaselineRefusesUnknownBenchmark(t *testing.T) {
 		t.Errorf("stderr = %q, want it to name the unknown benchmark", stderr)
 	}
 
-	if exists, err := gitx.BranchExists(dir, "autoresearch-go/sep7"); err != nil {
+	if exists, err := gitx.BranchExists(dir, "autor3search-go/sep7"); err != nil {
 		t.Fatal(err)
 	} else if exists {
-		t.Error("autoresearch-go/sep7 was created despite an unknown benchmark, want no branch")
+		t.Error("autor3search-go/sep7 was created despite an unknown benchmark, want no branch")
 	}
 }
 
@@ -243,13 +243,13 @@ func TestBaselineRejectsTraversalTag(t *testing.T) {
 	}
 	marker := filepath.Join(t.TempDir(), "escaped-marker")
 	// state.StateDir joins the tag as the 4th path component under the
-	// cache dir (cache/autoresearch-go/<16-hex-char hash>/<tag>). Compute the
+	// cache dir (cache/autor3search-go/<16-hex-char hash>/<tag>). Compute the
 	// traversal relative to a same-depth placeholder rather than cacheDir
 	// itself, so evilTag carries exactly enough ".." to reach marker once
 	// StateDir's real hash segment is joined in too — an insufficient count
 	// would only walk partway out and this test would then pass for the
 	// wrong reason.
-	placeholderStateDir := filepath.Join(cacheDir, "autoresearch-go", strings.Repeat("f", 16))
+	placeholderStateDir := filepath.Join(cacheDir, "autor3search-go", strings.Repeat("f", 16))
 	evilTag, err := filepath.Rel(placeholderStateDir, marker)
 	if err != nil {
 		t.Fatalf("filepath.Rel: %v", err)

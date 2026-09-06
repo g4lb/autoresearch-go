@@ -1,7 +1,7 @@
 // Package measure collects benchmark observations from a baseline and a
 // candidate tree in an interleaved order.
 //
-// Interleaving is the core measurement discipline of autoresearch-go.
+// Interleaving is the core measurement discipline of autor3search-go.
 // Comparing a candidate measured now against a baseline measured minutes ago
 // attributes CPU thermal drift, frequency scaling and background load to the
 // code change. Alternating the two sides within a single session cancels that
@@ -16,8 +16,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/g4lb/autoresearch-go/internal/bench"
-	"github.com/g4lb/autoresearch-go/internal/runner"
+	"github.com/g4lb/autor3search-go/internal/bench"
+	"github.com/g4lb/autor3search-go/internal/runner"
 )
 
 // RoundFunc produces one round of measurements for one side.

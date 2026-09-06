@@ -1,4 +1,4 @@
-// Package gitx wraps the git commands autoresearch-go needs.
+// Package gitx wraps the git commands autor3search-go needs.
 package gitx
 
 import (

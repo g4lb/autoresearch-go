@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/g4lb/autoresearch-go/internal/gitx"
-	"github.com/g4lb/autoresearch-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/gitx"
+	"github.com/g4lb/autor3search-go/internal/state"
 )
 
 // runRef is everything a command needs to address ONE run: where the
@@ -40,22 +40,22 @@ func (r runRef) WorktreeDir() string { return filepath.Join(r.StateDir, state.Wo
 func resolveRunRef(cmdName, dir, tagOverride string) (runRef, int) {
 	root, err := gitx.Root(dir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go %s: %s is not inside a git repository: %v\n", cmdName, dir, err)
+		fmt.Fprintf(os.Stderr, "autor3search-go %s: %s is not inside a git repository: %v\n", cmdName, dir, err)
 		return runRef{}, exitUsage
 	}
 	branch, err := gitx.CurrentBranch(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go %s: %v\n", cmdName, err)
+		fmt.Fprintf(os.Stderr, "autor3search-go %s: %v\n", cmdName, err)
 		return runRef{}, exitUsage
 	}
 
 	tag := tagOverride
 	if tag == "" {
 		if !strings.HasPrefix(branch, branchPrefix) {
-			fmt.Fprintf(os.Stderr, "autoresearch-go %s: current branch %q is not a run branch "+
+			fmt.Fprintf(os.Stderr, "autor3search-go %s: current branch %q is not a run branch "+
 				"(expected %s<tag>). Check out your run branch first, e.g. "+
 				"`git checkout %ssep4`, name the run with -tag, or run "+
-				"`autoresearch-go baseline` if you have not started a run yet.\n",
+				"`autor3search-go baseline` if you have not started a run yet.\n",
 				cmdName, branch, branchPrefix, branchPrefix)
 			return runRef{}, exitUsage
 		}
@@ -67,12 +67,12 @@ func resolveRunRef(cmdName, dir, tagOverride string) (runRef, int) {
 	// is about to be joined into an out-of-tree path that os.MkdirAll will
 	// create, long before any git operation could reject it.
 	if err := state.ValidTag(tag); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go %s: %v\n", cmdName, err)
+		fmt.Fprintf(os.Stderr, "autor3search-go %s: %v\n", cmdName, err)
 		return runRef{}, exitUsage
 	}
 	stateDir, err := state.StateDir(root, tag)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go %s: %v\n", cmdName, err)
+		fmt.Fprintf(os.Stderr, "autor3search-go %s: %v\n", cmdName, err)
 		return runRef{}, exitUsage
 	}
 	return runRef{Root: root, Branch: branch, Tag: tag, StateDir: stateDir}, exitOK

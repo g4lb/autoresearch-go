@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/g4lb/autoresearch-go/internal/results"
-	"github.com/g4lb/autoresearch-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/results"
+	"github.com/g4lb/autor3search-go/internal/state"
 )
 
 // runStatus answers "where is this run, and how do I stop it" without
@@ -36,7 +36,7 @@ func runStatus(args []string) int {
 	}
 	base, err := state.LoadBaseline(filepath.Join(ref.StateDir, state.BaselineFile))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go status: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go status: %v\n", err)
 		return exitUsage
 	}
 
@@ -74,7 +74,7 @@ func printMeasuringAgainst(base *state.Baseline) {
 func printWorktree(ref runRef) {
 	path := ref.WorktreeDir()
 	if fi, err := os.Stat(path); err != nil || !fi.IsDir() {
-		fmt.Printf("%-14s %s  (MISSING — re-run `autoresearch-go baseline -tag %s -force`)\n",
+		fmt.Printf("%-14s %s  (MISSING — re-run `autor3search-go baseline -tag %s -force`)\n",
 			"worktree", path, ref.Tag)
 		return
 	}
@@ -124,12 +124,12 @@ func printStopState(ref runRef) {
 	if state.StopRequested(ref.StateDir) {
 		fmt.Printf("%-14s requested — the agent will exit the loop at its next verdict\n", "stop")
 		fmt.Println()
-		fmt.Println("to cancel the stop:  autoresearch-go stop -clear")
-		fmt.Println("to stop sooner:      autoresearch-go stop -force")
+		fmt.Println("to cancel the stop:  autor3search-go stop -clear")
+		fmt.Println("to stop sooner:      autor3search-go stop -force")
 		return
 	}
 	fmt.Printf("%-14s not requested\n", "stop")
 	fmt.Println()
-	fmt.Println("to stop after the current experiment:  autoresearch-go stop")
-	fmt.Println("to stop now, abandoning it:            autoresearch-go stop -force")
+	fmt.Println("to stop after the current experiment:  autor3search-go stop")
+	fmt.Println("to stop now, abandoning it:            autor3search-go stop -force")
 }

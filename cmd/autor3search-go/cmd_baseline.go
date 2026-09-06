@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/g4lb/autoresearch-go/internal/config"
-	"github.com/g4lb/autoresearch-go/internal/discover"
-	"github.com/g4lb/autoresearch-go/internal/freeze"
-	"github.com/g4lb/autoresearch-go/internal/gitx"
-	"github.com/g4lb/autoresearch-go/internal/results"
-	"github.com/g4lb/autoresearch-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/config"
+	"github.com/g4lb/autor3search-go/internal/discover"
+	"github.com/g4lb/autor3search-go/internal/freeze"
+	"github.com/g4lb/autor3search-go/internal/gitx"
+	"github.com/g4lb/autor3search-go/internal/results"
+	"github.com/g4lb/autor3search-go/internal/state"
 )
 
 // runBaseline establishes the fixed reference point for one experiment run:
@@ -41,7 +41,7 @@ func runBaseline(args []string) int {
 		return exitUsage
 	}
 	if strings.TrimSpace(*tag) == "" {
-		fmt.Fprintln(os.Stderr, "autoresearch-go baseline: -tag must not be empty")
+		fmt.Fprintln(os.Stderr, "autor3search-go baseline: -tag must not be empty")
 		return exitUsage
 	}
 	// Validated here, before state.StateDir or any os.MkdirAll ever sees the
@@ -52,13 +52,13 @@ func runBaseline(args []string) int {
 	// internally too, but failing fast here means a bad -tag never reaches
 	// any filesystem call at all, not even the state directory lookup.
 	if err := state.ValidTag(*tag); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go baseline: %v\n", err)
 		return exitUsage
 	}
 
 	root, err := gitx.Root(*dir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %s is not inside a git repository: %v\n", *dir, err)
+		fmt.Fprintf(os.Stderr, "autor3search-go baseline: %s is not inside a git repository: %v\n", *dir, err)
 		return exitUsage
 	}
 
@@ -66,11 +66,11 @@ func runBaseline(args []string) int {
 	// below except results.tsv is written there, never into root.
 	stateDir, err := state.StateDir(root, *tag)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go baseline: %v\n", err)
 		return exitUsage
 	}
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go baseline: %v\n", err)
 		return exitUsage
 	}
 
@@ -83,25 +83,25 @@ func runBaseline(args []string) int {
 	// actually on disk: the baseline would not be reproducible.
 	clean, err := gitx.IsClean(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go baseline: %v\n", err)
 		return exitUsage
 	}
 	if !clean {
-		fmt.Fprintln(os.Stderr, "autoresearch-go baseline: working tree is dirty; a baseline recorded "+
+		fmt.Fprintln(os.Stderr, "autor3search-go baseline: working tree is dirty; a baseline recorded "+
 			"against uncommitted changes is not reproducible. Commit or stash your changes first.")
 		return exitUsage
 	}
 
 	// A reused tag would silently compare later candidates against whatever
 	// commit the old branch happens to point to now, not a fresh baseline.
-	branch := "autoresearch-go/" + *tag
+	branch := "autor3search-go/" + *tag
 	exists, err := gitx.BranchExists(root, branch)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go baseline: %v\n", err)
 		return exitUsage
 	}
 	if exists {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: branch %s already exists; the branch must be "+
+		fmt.Fprintf(os.Stderr, "autor3search-go baseline: branch %s already exists; the branch must be "+
 			"fresh — a reused tag would compare against the wrong commit. Pick a different -tag.\n", branch)
 		return exitUsage
 	}
@@ -115,7 +115,7 @@ func runBaseline(args []string) int {
 	if len(cfg.Benchmarks) > 0 {
 		discovered, err := discover.Benchmarks(root)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
+			fmt.Fprintf(os.Stderr, "autor3search-go baseline: %v\n", err)
 			return exitUsage
 		}
 		available := discover.BaseNames(discovered)
@@ -130,7 +130,7 @@ func runBaseline(args []string) int {
 			}
 		}
 		if len(unknown) > 0 {
-			fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %s names unknown benchmark(s): %s\n",
+			fmt.Fprintf(os.Stderr, "autor3search-go baseline: %s names unknown benchmark(s): %s\n",
 				configPath, strings.Join(unknown, ", "))
 			fmt.Fprintf(os.Stderr, "available: %s\n", strings.Join(available, ", "))
 			return exitUsage
@@ -144,11 +144,11 @@ func runBaseline(args []string) int {
 	resultsPath := filepath.Join(root, results.Path)
 	existingRows, err := results.Load(resultsPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %s: %v\n", resultsPath, err)
+		fmt.Fprintf(os.Stderr, "autor3search-go baseline: %s: %v\n", resultsPath, err)
 		return exitUsage
 	}
 	if len(existingRows) > 0 && !*force {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %s already holds %d experiment row(s) from a "+
+		fmt.Fprintf(os.Stderr, "autor3search-go baseline: %s already holds %d experiment row(s) from a "+
 			"previous run; a fresh baseline would erase that record with no way to get it back.\n", resultsPath, len(existingRows))
 		fmt.Fprintln(os.Stderr, "Move or delete it if you no longer need it, or re-run with -force to discard it.")
 		return exitUsage
@@ -158,12 +158,12 @@ func runBaseline(args []string) int {
 	// working tree back exactly where it found it.
 	originalBranch, err := gitx.CurrentBranch(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go baseline: %v\n", err)
 		return exitUsage
 	}
 
 	if err := gitx.CreateBranch(root, branch); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: create branch %s: %v\n", branch, err)
+		fmt.Fprintf(os.Stderr, "autor3search-go baseline: create branch %s: %v\n", branch, err)
 		return exitUsage
 	}
 
@@ -173,15 +173,15 @@ func runBaseline(args []string) int {
 	// originalBranch and delete branch before reporting the failure.
 	commit, frozenCount, err := finishBaseline(root, stateDir, configPath, resultsPath, branch, *tag, cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go baseline: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go baseline: %v\n", err)
 		if coErr := gitx.Checkout(root, originalBranch); coErr != nil {
-			fmt.Fprintf(os.Stderr, "autoresearch-go baseline: cleanup did not fully succeed: checkout %s: %v\n"+
+			fmt.Fprintf(os.Stderr, "autor3search-go baseline: cleanup did not fully succeed: checkout %s: %v\n"+
 				"you may need to run `git checkout %s && git branch -D %s` by hand.\n",
 				originalBranch, coErr, originalBranch, branch)
 			return exitUsage
 		}
 		if dErr := gitx.DeleteBranch(root, branch); dErr != nil {
-			fmt.Fprintf(os.Stderr, "autoresearch-go baseline: cleanup did not fully succeed: delete branch %s: %v\n"+
+			fmt.Fprintf(os.Stderr, "autor3search-go baseline: cleanup did not fully succeed: delete branch %s: %v\n"+
 				"you may need to run `git branch -D %s` by hand.\n", branch, dErr, branch)
 		}
 		return exitUsage
@@ -274,11 +274,11 @@ func sha256File(path string) (string, error) {
 
 // printBaselineSummary reports what baseline pinned and the next command.
 func printBaselineSummary(branch, commit string, frozenCount int, benchmarks []string) {
-	fmt.Println("autoresearch-go baseline: recorded a fresh baseline")
+	fmt.Println("autor3search-go baseline: recorded a fresh baseline")
 	fmt.Printf("  branch:     %s\n", branch)
 	fmt.Printf("  commit:     %s\n", commit)
 	fmt.Printf("  frozen:     %d test file(s)\n", frozenCount)
 	fmt.Printf("  benchmarks: %s\n", strings.Join(benchmarks, ", "))
 	fmt.Println("\nnext:")
-	fmt.Println("  autoresearch-go eval")
+	fmt.Println("  autor3search-go eval")
 }

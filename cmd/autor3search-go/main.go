@@ -1,4 +1,4 @@
-// Command autoresearch-go is a frozen measurement harness that lets an AI
+// Command autor3search-go is a frozen measurement harness that lets an AI
 // coding agent autonomously optimize a Go repository.
 //
 // The binary never edits source code. It gates correctness, measures
@@ -39,8 +39,8 @@ var commands = map[string]command{
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "autoresearch-go — autonomous Go performance optimization harness")
-	fmt.Fprintln(os.Stderr, "\nusage: autoresearch-go <command> [flags]\n\ncommands:")
+	fmt.Fprintln(os.Stderr, "autor3search-go — autonomous Go performance optimization harness")
+	fmt.Fprintln(os.Stderr, "\nusage: autor3search-go <command> [flags]\n\ncommands:")
 	for _, name := range []string{"init", "doctor", "baseline", "profile", "eval", "status", "stop", "report", "version"} {
 		fmt.Fprintf(os.Stderr, "  %-9s %s\n", name, commands[name].summary)
 	}

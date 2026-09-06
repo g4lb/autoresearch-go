@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/g4lb/autoresearch-go/internal/gitx"
-	"github.com/g4lb/autoresearch-go/internal/results"
+	"github.com/g4lb/autor3search-go/internal/gitx"
+	"github.com/g4lb/autor3search-go/internal/results"
 )
 
 // runReport summarizes results.tsv.
@@ -22,14 +22,14 @@ func runReport(args []string) int {
 
 	root, err := gitx.Root(*dir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go report: %s is not inside a git repository: %v\n", *dir, err)
+		fmt.Fprintf(os.Stderr, "autor3search-go report: %s is not inside a git repository: %v\n", *dir, err)
 		return exitUsage
 	}
 
 	resultsPath := filepath.Join(root, results.Path)
 	rows, err := results.Load(resultsPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go report: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go report: %v\n", err)
 		return exitUsage
 	}
 
@@ -40,7 +40,7 @@ func runReport(args []string) int {
 // printReportSummary prints a summary of the results.
 func printReportSummary(rows []results.Row) {
 	if len(rows) == 0 {
-		fmt.Println("autoresearch-go report: no experiments recorded")
+		fmt.Println("autor3search-go report: no experiments recorded")
 		return
 	}
 
@@ -108,7 +108,7 @@ func printReportSummary(rows []results.Row) {
 	})
 
 	// Print summary.
-	fmt.Printf("autoresearch-go report: %d total experiments\n", len(rows))
+	fmt.Printf("autor3search-go report: %d total experiments\n", len(rows))
 	fmt.Printf("  kept: %d\n", kept)
 	fmt.Printf("  discarded: %d\n", discarded)
 	fmt.Printf("  failed: %d\n", failed)

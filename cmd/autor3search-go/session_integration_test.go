@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/g4lb/autoresearch-go/internal/config"
-	"github.com/g4lb/autoresearch-go/internal/results"
+	"github.com/g4lb/autor3search-go/internal/config"
+	"github.com/g4lb/autor3search-go/internal/results"
 )
 
 // TestSessionMultiExperimentSequence is the integration test that would
@@ -340,7 +340,7 @@ func parseCumulativeSpeedup(t *testing.T, reportOut string) float64 {
 // stageBFullyOptimized tell below — it exists solely so step 3's true
 // effect size is large enough (see the comment above copyDemoRepo's call in
 // TestSessionMultiExperimentSequence) to survive a noisy, loaded CI runner.
-const stageOriginalSlow = `// Package demo is a fixture for autoresearch-go's own integration tests.
+const stageOriginalSlow = `// Package demo is a fixture for autor3search-go's own integration tests.
 // The implementation is intentionally suboptimal.
 package demo
 
@@ -388,7 +388,7 @@ func CountWords(s string) map[string]int {
 // redundantOriginalPasses' 40x padding down to redundantStageAPasses' much
 // smaller 6x (see that constant's doc comment), step 3's measured true
 // effect is roughly an order of magnitude, not roughly half.
-const stageABuilderOnly = `// Package demo is a fixture for autoresearch-go's own integration tests.
+const stageABuilderOnly = `// Package demo is a fixture for autor3search-go's own integration tests.
 package demo
 
 import "strings"
@@ -433,7 +433,7 @@ func CountWords(s string) map[string]int {
 // against stageA (not the original), this combination is a second,
 // independent improvement of roughly an order of magnitude, comfortably
 // clear of noise for the same rank-order reason step 3 needs to be.
-const stageBFullyOptimized = `// Package demo is a fixture for autoresearch-go's own integration tests.
+const stageBFullyOptimized = `// Package demo is a fixture for autor3search-go's own integration tests.
 package demo
 
 import "strings"
@@ -467,7 +467,7 @@ func CountWords(s string) map[string]int {
 
 // brokenWordCount is fast but wrong: it always reports no words, which the
 // still-frozen, still-original TestCountWords assertions must catch.
-const brokenWordCount = `// Package demo is a fixture for autoresearch-go's own integration tests.
+const brokenWordCount = `// Package demo is a fixture for autor3search-go's own integration tests.
 package demo
 
 // CountWords is deliberately broken: it always reports no words.

@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/g4lb/autoresearch-go/internal/gitx"
-	"github.com/g4lb/autoresearch-go/internal/profile"
-	"github.com/g4lb/autoresearch-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/gitx"
+	"github.com/g4lb/autor3search-go/internal/profile"
+	"github.com/g4lb/autor3search-go/internal/state"
 )
 
 // runProfile profiles the declared benchmarks and reports hot spots.
@@ -23,7 +23,7 @@ func runProfile(args []string) int {
 
 	root, err := gitx.Root(*dir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go profile: %s is not inside a git repository: %v\n", *dir, err)
+		fmt.Fprintf(os.Stderr, "autor3search-go profile: %s is not inside a git repository: %v\n", *dir, err)
 		return exitUsage
 	}
 
@@ -35,12 +35,12 @@ func runProfile(args []string) int {
 	// Parse timeout.
 	timeout, err := cfg.TimeoutDuration()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go profile: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go profile: %v\n", err)
 		return exitUsage
 	}
 
 	// Profile destination directory.
-	profileDir := filepath.Join(root, ".autoresearch", "profiles")
+	profileDir := filepath.Join(root, ".autor3search", "profiles")
 
 	// Run profiling. Capture writes directly to profileDir.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -52,14 +52,14 @@ func runProfile(args []string) int {
 	// `go test ./... -bench`, which has no such restriction).
 	dirs, err := profile.Dirs(root, cfg.Benchmarks)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go profile: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go profile: %v\n", err)
 		return exitUsage
 	}
 
 	benchPattern := state.BenchPattern(cfg.Benchmarks)
 	report, err := profile.Capture(ctx, root, dirs, benchPattern, cfg.Benchtime, profileDir, timeout)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go profile: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go profile: %v\n", err)
 		return exitUsage
 	}
 
@@ -79,14 +79,14 @@ func runProfile(args []string) int {
 	}
 
 	if multi {
-		fmt.Println("profiles written under .autoresearch/profiles/<package>/{cpu,mem}.out:")
+		fmt.Println("profiles written under .autor3search/profiles/<package>/{cpu,mem}.out:")
 		for _, pkg := range report.Packages {
 			fmt.Printf("  %s: %s, %s\n", pkg.Dir, pkg.CPUPath, pkg.MemPath)
 		}
 		fmt.Printf("open with: go tool pprof -http=: <path above>\n")
 	} else {
-		fmt.Printf("profiles written to .autoresearch/profiles/{cpu,mem}.out\n")
-		fmt.Printf("open with: go tool pprof -http=: .autoresearch/profiles/cpu.out\n")
+		fmt.Printf("profiles written to .autor3search/profiles/{cpu,mem}.out\n")
+		fmt.Printf("open with: go tool pprof -http=: .autor3search/profiles/cpu.out\n")
 	}
 
 	return exitOK

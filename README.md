@@ -1,6 +1,6 @@
-# autoresearch-go
+# autor3search-go
 
-[![release](https://img.shields.io/github/v/release/g4lb/autoresearch-go?label=release)](https://github.com/g4lb/autoresearch-go/releases/latest)
+[![release](https://img.shields.io/github/v/release/g4lb/autor3search-go?label=release)](https://github.com/g4lb/autor3search-go/releases/latest)
 
 **Autonomous AI-driven performance optimization for any Go repository.**
 
@@ -19,7 +19,7 @@ is `ns/op` instead of `val_bpb`, and where **correctness is not optional**.
 > found in the tool itself.
 >
 > What version you get, and what changed in it, is on the
-> [releases page](https://github.com/g4lb/autoresearch-go/releases) — this README
+> [releases page](https://github.com/g4lb/autor3search-go/releases) — this README
 > describes the current one.
 
 ---
@@ -30,38 +30,38 @@ Open your coding agent inside the Go repository you want to make faster, and
 paste this:
 
 ```text
-Install and run autoresearch-go on this repository, then optimize it.
+Install and run autor3search-go on this repository, then optimize it.
 
 Setup:
-1. go install github.com/g4lb/autoresearch-go/cmd/autoresearch-go@latest
+1. go install github.com/g4lb/autor3search-go/cmd/autor3search-go@latest
    Make sure $(go env GOPATH)/bin is on PATH.
-2. autoresearch-go init
+2. autor3search-go init
    Show me the benchmarks it discovered. If it reports none, STOP and tell me:
    this tool can only optimize what it can measure.
-3. git add -A && git commit -m "autoresearch-go init"
-4. autoresearch-go doctor
+3. git add -A && git commit -m "autor3search-go init"
+4. autor3search-go doctor
    Show me any warnings. If the machine looks unfit to measure, stop and ask me
    before continuing.
-5. autoresearch-go baseline -tag <today, e.g. sep6>
+5. autor3search-go baseline -tag <today, e.g. sep6>
 
 Then:
 6. Read program.md in this repository, in full. It is your instruction set for
    the rest of this run. Follow it exactly.
 
 Rules for the whole run:
-- Never edit program.md, .autoresearch/config.yaml, results.tsv, or anything
+- Never edit program.md, .autor3search/config.yaml, results.tsv, or anything
   the harness writes. They are not yours.
-- Never pass -force to any autoresearch-go command. (I may run
-  `autoresearch-go stop -force` myself; that one is mine, not yours.)
+- Never pass -force to any autor3search-go command. (I may run
+  `autor3search-go stop -force` myself; that one is mine, not yours.)
 - One idea per experiment. Commit before each eval.
 - KEEP means the commit stays. Anything else means git reset --hard HEAD~1.
 - Print one context line before each experiment, so I can see where you are:
-  [exp <n> | <branch> | vs <measure_commit> | stop: autoresearch-go stop]
+  [exp <n> | <branch> | vs <measure_commit> | stop: autor3search-go stop]
 
-Run the loop until I stop you. I stop you by running `autoresearch-go stop` in
+Run the loop until I stop you. I stop you by running `autor3search-go stop` in
 my own terminal — you will see it as "stop_requested": true in a verdict.
 When you do: apply that verdict, do not start another experiment, run
-`autoresearch-go report`, summarize what you tried, and exit the loop.
+`autor3search-go report`, summarize what you tried, and exit the loop.
 ```
 
 That's the whole handoff. The agent installs the tool, sets the run up, and then
@@ -69,8 +69,8 @@ follows `program.md` — which the harness generated for your repository and whi
 tells it how to run the keep-or-discard loop.
 
 What you get back: one commit per accepted change on a branch named
-`autoresearch-go/<tag>`, and a `results.tsv` recording every experiment that was
-tried, including the ones that failed. `autoresearch-go report` summarizes it.
+`autor3search-go/<tag>`, and a `results.tsv` recording every experiment that was
+tried, including the ones that failed. `autor3search-go report` summarizes it.
 
 Two things worth knowing before you start it:
 
@@ -87,11 +87,11 @@ the agent cannot reach it.
 
 | Piece | What it is | Who edits it |
 |---|---|---|
-| `autoresearch-go` | the harness binary: gates, measures, scores | nobody — it's compiled |
+| `autor3search-go` | the harness binary: gates, measures, scores | nobody — it's compiled |
 | your `_test.go` files | frozen at baseline, restored before every run | nobody — restored automatically |
 | your Go source | whatever is in `scope` | **the agent** |
 | `program.md` | the agent's instructions | **you** |
-| frozen tests, baseline worktree, baseline record | lives outside your repo, under `os.UserCacheDir()` (or `AUTORESEARCH_GO_STATE_HOME`) | nobody — the agent could not reach it even by editing every file in scope |
+| frozen tests, baseline worktree, baseline record | lives outside your repo, under `os.UserCacheDir()` (or `AUTOR3SEARCH_GO_STATE_HOME`) | nobody — the agent could not reach it even by editing every file in scope |
 
 That last row matters: the agent edits the repository, so anything the score depends
 on that *lived* there would be silently writable by the very agent it is meant to
@@ -102,22 +102,22 @@ both gitignored by `init`.
 ## Quick start
 
 ```bash
-go install github.com/g4lb/autoresearch-go/cmd/autoresearch-go@latest
+go install github.com/g4lb/autor3search-go/cmd/autor3search-go@latest
 
 cd your-go-project
-autoresearch-go init                                 # find benchmarks, write config + program.md
-git add -A && git commit -m "autoresearch-go init"   # baseline refuses a dirty tree
-autoresearch-go doctor                               # is this machine fit to measure?
-autoresearch-go baseline -tag sep4                   # freeze tests, pin the baseline commit
+autor3search-go init                                 # find benchmarks, write config + program.md
+git add -A && git commit -m "autor3search-go init"   # baseline refuses a dirty tree
+autor3search-go doctor                               # is this machine fit to measure?
+autor3search-go baseline -tag sep4                   # freeze tests, pin the baseline commit
 ```
 
 That commit matters — `init` only writes files, it does not commit them, and
 `baseline` refuses to run against an uncommitted tree because a baseline pinned
 against what's on disk (not what's in git) would not be reproducible. `init` writes
-three things: `.gitignore` entries, `.autoresearch/config.yaml`, and `program.md`.
-`.autoresearch/config.yaml` is the one file under `.autoresearch/` that gets
+three things: `.gitignore` entries, `.autor3search/config.yaml`, and `program.md`.
+`.autor3search/config.yaml` is the one file under `.autor3search/` that gets
 committed — it's the run configuration, and humans own it; everything else the
-harness later writes under `.autoresearch/` (e.g. `profile`'s pprof output) is
+harness later writes under `.autor3search/` (e.g. `profile`'s pprof output) is
 gitignored.
 
 Then start your agent in the repo:
@@ -136,18 +136,18 @@ and nothing else — so there is no human-readable stream to watch. Ask the run
 where it is instead, from any terminal, any branch, at any time:
 
 ```
-$ autoresearch-go status
+$ autor3search-go status
 run tag        sep4
-branch         autoresearch-go/sep4  (checked out)
+branch         autor3search-go/sep4  (checked out)
 baseline       a3f1c2d  (run started here)
 measuring vs   9b7e410  (advanced past the baseline by earlier KEEPs)
-worktree       ~/Library/Caches/autoresearch-go/1a2b3c4d/sep4/baseline-worktree
+worktree       ~/Library/Caches/autor3search-go/1a2b3c4d/sep4/baseline-worktree
 experiments    4 run  (1 keep, 2 discard, 1 fail, 0 crash)  — next is #5
 eval           running (pid 48213) — an experiment is being measured
 stop           not requested
 
-to stop after the current experiment:  autoresearch-go stop
-to stop now, abandoning it:            autoresearch-go stop -force
+to stop after the current experiment:  autor3search-go stop
+to stop now, abandoning it:            autor3search-go stop -force
 ```
 
 `status` never writes anything: checking on a run cannot change it.
@@ -155,13 +155,13 @@ to stop now, abandoning it:            autoresearch-go stop -force
 There are three ways to stop, and they differ in what happens to the
 experiment currently in flight.
 
-**`autoresearch-go stop` — graceful.** Writes a request the agent reads at its
+**`autor3search-go stop` — graceful.** Writes a request the agent reads at its
 next verdict. The experiment under way finishes and is scored, its KEEP or
 DISCARD is applied, and only then does the loop exit with a summary. Nothing
-is thrown away. This is the one to use. `autoresearch-go stop -clear` cancels
+is thrown away. This is the one to use. `autor3search-go stop -clear` cancels
 it if you change your mind before the agent notices.
 
-**`autoresearch-go stop -force` — immediate.** For when you cannot wait out a
+**`autor3search-go stop -force` — immediate.** For when you cannot wait out a
 long benchmark. It writes the same request, then signals the running `eval` to
 abandon the experiment. The experiment is lost (no `results.tsv` row is
 written, because nothing was measured); every kept commit before it is
@@ -175,18 +175,18 @@ compiled benchmark as a grandchild process, so an `eval` killed without a
 chance to clean up would leave that benchmark running — burning CPU and
 corrupting every later measurement on the machine.
 
-Whichever you use, the work is on the run branch `autoresearch-go/<tag>` and
-`autoresearch-go report` summarizes it. Resuming later needs nothing special:
+Whichever you use, the work is on the run branch `autor3search-go/<tag>` and
+`autor3search-go report` summarizes it. Resuming later needs nothing special:
 clear any pending stop and point the agent back at `program.md`.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `init` | Scans the repo, discovers benchmarks via `go/ast`, and writes `.autoresearch/config.yaml` + `program.md`. Refuses to overwrite an existing config without `-force`. |
+| `init` | Scans the repo, discovers benchmarks via `go/ast`, and writes `.autor3search/config.yaml` + `program.md`. Refuses to overwrite an existing config without `-force`. |
 | `doctor` | Checks whether this machine can measure reliably (CPU frequency scaling, thermal throttling risk, disk space) and prints its findings. Informational — always exits 0. |
-| `baseline -tag <tag>` | Creates the run branch `autoresearch-go/<tag>`, freezes every in-scope `_test.go` file, and pins a detached worktree at the baseline commit. Refuses a dirty tree and a reused tag. |
-| `profile` | Runs the declared benchmarks under Go's CPU and memory profilers and prints the top hot spots — real `pprof` data on where time and allocations actually go, rather than an agent guessing from reading source. Profiles only the package(s) that declare the benchmarks in scope (the go tool refuses `-cpuprofile`/`-memprofile` against `./...` once more than one package matches). When they're all in one package — the common case — writes `.autoresearch/profiles/{cpu,mem}.out`, openable with `go tool pprof -http=: <file>`; when benchmarks span multiple packages, profiles each in turn and writes `.autoresearch/profiles/<package>/{cpu,mem}.out`, with output grouped and labelled by package. |
+| `baseline -tag <tag>` | Creates the run branch `autor3search-go/<tag>`, freezes every in-scope `_test.go` file, and pins a detached worktree at the baseline commit. Refuses a dirty tree and a reused tag. |
+| `profile` | Runs the declared benchmarks under Go's CPU and memory profilers and prints the top hot spots — real `pprof` data on where time and allocations actually go, rather than an agent guessing from reading source. Profiles only the package(s) that declare the benchmarks in scope (the go tool refuses `-cpuprofile`/`-memprofile` against `./...` once more than one package matches). When they're all in one package — the common case — writes `.autor3search/profiles/{cpu,mem}.out`, openable with `go tool pprof -http=: <file>`; when benchmarks span multiple packages, profiles each in turn and writes `.autor3search/profiles/<package>/{cpu,mem}.out`, with output grouped and labelled by package. |
 | `eval` | Runs one experiment: gates (scope, config integrity, restore, build, vet, test), measures the candidate against the pinned baseline worktree, scores it, appends a `results.tsv` row, exits `0`/`1`/`2`/`3` for KEEP/DISCARD/FAIL/CRASH, and on `KEEP` re-points the pinned worktree at the candidate's commit so the next `eval` measures against it (see [Scoring](#scoring)). |
 | `status` | Prints where a run is: run branch and whether it is checked out, the frozen baseline commit and the advancing measurement commit, the pinned worktree, how many experiments have run and with what verdicts, whether an `eval` is in flight, and whether a stop is pending. Read-only. Accepts `-tag <tag>` so it works from any branch. |
 | `stop` | Asks the agent to end the run after the experiment it is running: writes a request `eval` reports back as `stop_requested`. `-clear` cancels a pending request; `-force` additionally signals the running `eval` to abandon the current experiment and reports what state that leaves the repository in. Accepts `-tag <tag>`. |
@@ -201,11 +201,11 @@ concurrent invocations, and testable without `os.Chdir`.
 
 Everything the metric depends on — the frozen golden test copies, the baseline
 record, the pinned worktree — is kept **out of the repository**, under
-`<user cache>/autoresearch-go/<repo hash>/<tag>/`. That is deliberate: the agent
+`<user cache>/autor3search-go/<repo hash>/<tag>/`. That is deliberate: the agent
 edits the repository, so in-tree state would be state the agent could rewrite to
 make itself look good.
 
-Set `AUTORESEARCH_GO_STATE_HOME` to an absolute path to put it somewhere else —
+Set `AUTOR3SEARCH_GO_STATE_HOME` to an absolute path to put it somewhere else —
 useful in a container or CI runner with no durable cache. Run state is keyed
 underneath it the same way, one directory per repository and one per tag. A
 relative value is refused: it would resolve against whatever directory each
@@ -347,7 +347,7 @@ An agent optimizing your code can "win" by cheating. Each route is closed:
 | Bank measurement noise as a win | a Mann-Whitney test must clear `p < 0.05`; noise is `DISCARD` |
 | Speed up A by wrecking B | any significant regression over 5 % rejects the change outright |
 | Swap or edit a dependency (`go.mod`/`go.sum`) | rejected outright regardless of `scope` — a dependency change is a human decision, not an autonomous one, and would change what is being measured rather than how fast it runs |
-| Loosen the rules mid-run (raise `max_regress_pct`, narrow `scope`, drop a benchmark) | `.autoresearch/config.yaml` is hashed at baseline; any change to it fails the run with a config-hash mismatch |
+| Loosen the rules mid-run (raise `max_regress_pct`, narrow `scope`, drop a benchmark) | `.autor3search/config.yaml` is hashed at baseline; any change to it fails the run with a config-hash mismatch |
 | Compare against a stale baseline | the measurement baseline is **re-measured every run**, interleaved with the candidate |
 | Coast to `KEEP` on an earlier improvement doing nothing new | the measurement baseline **advances to the newly kept commit after every `KEEP`** (see [Scoring](#scoring)), so a later no-op is compared against what was just kept, not against where the run started |
 
@@ -386,7 +386,7 @@ score = geomean(new_ns / base_ns)   across the declared benchmark set
 A `Delta`'s reported significance (`p < alpha`, no correction) is always the raw,
 honest statistic — that's what a human or agent should see when reading a report.
 The Bonferroni correction in rule 2 is a KEEP-decision threshold layered on top,
-not a redefinition of "significant"; `autoresearch-go eval`'s output calls out a
+not a redefinition of "significant"; `autor3search-go eval`'s output calls out a
 benchmark that is significant at `alpha` but did not clear the corrected bar,
 rather than silently calling it "not significant."
 
@@ -430,7 +430,7 @@ comparing against that same stale starting point and a no-op could coast to
 `KEEP` on an earlier win it did not contribute to.
 
 One consequence: each kept `score` is now only that experiment's own
-incremental contribution, so `autoresearch-go report`'s cumulative speedup
+incremental contribution, so `autor3search-go report`'s cumulative speedup
 is the **product** of every kept score, not the latest one alone —
 successive real improvements compound the way percentage changes do.
 
@@ -484,19 +484,19 @@ Stated plainly, because performance tools that oversell are worse than useless:
 
 ### Repos with no benchmarks
 
-`autoresearch-go init` discovers benchmarks by scanning the repository for Go test
+`autor3search-go init` discovers benchmarks by scanning the repository for Go test
 files and looking for functions matching `func BenchmarkXxx(b *testing.B)`. If it
-finds none, it refuses to write `.autoresearch/config.yaml` and exits with an error,
+finds none, it refuses to write `.autor3search/config.yaml` and exits with an error,
 rather than generating a config with an empty `benchmarks:` list that would silently
 optimize nothing.
 
-That refusal is deliberate: `autoresearch-go` has no other notion of "faster." The
+That refusal is deliberate: `autor3search-go` has no other notion of "faster." The
 verdict — `KEEP`, `DISCARD`, `FAIL`, `CRASH` — is entirely a function of the declared
 benchmarks' timings across a baseline and a candidate. No benchmarks means no signal
 to gate on, at which point every candidate would either be rejected for no reason or
 accepted for no reason.
 
-To use `autoresearch-go` on a repository like this:
+To use `autor3search-go` on a repository like this:
 
 1. Write at least one benchmark that covers the code you actually want made faster —
    a plain Go benchmark, in a `_test.go` file, of the form:
@@ -515,7 +515,7 @@ To use `autoresearch-go` on a repository like this:
    the bottleneck. Benchmark the function, loop, or request path that actually
    dominates the workload you care about, ideally informed by a profile of the real
    program rather than a guess.
-3. Re-run `autoresearch-go init` once the benchmark exists. It will pick it up and
+3. Re-run `autor3search-go init` once the benchmark exists. It will pick it up and
    proceed normally.
 
 ## License

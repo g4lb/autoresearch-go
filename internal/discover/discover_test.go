@@ -51,7 +51,7 @@ import "testing"
 
 func BenchmarkFixture(b *testing.B) {}
 `)
-	write(t, root, ".autoresearch/frozen/pkg/a_test.go", `package pkg
+	write(t, root, ".autor3search/frozen/pkg/a_test.go", `package pkg
 
 import "testing"
 

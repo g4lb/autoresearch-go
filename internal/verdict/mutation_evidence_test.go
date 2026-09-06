@@ -3,7 +3,7 @@ package verdict
 import (
 	"testing"
 
-	"github.com/g4lb/autoresearch-go/internal/bench"
+	"github.com/g4lb/autor3search-go/internal/bench"
 )
 
 // TestMutationEvidenceNoOpScenarioDiscards constructs the no-op scenario

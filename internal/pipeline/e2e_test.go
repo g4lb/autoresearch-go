@@ -9,15 +9,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/g4lb/autoresearch-go/internal/config"
+	"github.com/g4lb/autor3search-go/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
 // This file is the one test in the repository that drives the real,
-// compiled `autoresearch-go` binary through the process boundary rather
+// compiled `autor3search-go` binary through the process boundary rather
 // than calling package functions directly. Every other test — in this
-// package and in cmd/autoresearch-go — either calls pipeline.Eval directly
-// or calls cmd/autoresearch-go's unexported runInit/runBaseline/runEval/
+// package and in cmd/autor3search-go — either calls pipeline.Eval directly
+// or calls cmd/autor3search-go's unexported runInit/runBaseline/runEval/
 // runReport in-process. Neither catches a wiring problem between the CLI
 // layer and the packages it assembles (a flag mis-plumbed, a wrong exit
 // code returned to the shell, output that looks right in-process but not
@@ -25,7 +25,7 @@ import (
 // runs the exact sequence a human, or an unattended agent following
 // program.md, actually types.
 
-// buildBinary compiles cmd/autoresearch-go once into a temp directory and
+// buildBinary compiles cmd/autor3search-go once into a temp directory and
 // returns the path to the resulting binary. Building once and reusing the
 // binary across every subcommand call below is much cheaper than paying
 // `go run`'s build cost on each of the five invocations this test makes.
@@ -35,11 +35,11 @@ func buildBinary(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bin := filepath.Join(t.TempDir(), "autoresearch-go")
-	cmd := exec.Command("go", "build", "-o", bin, "./cmd/autoresearch-go")
+	bin := filepath.Join(t.TempDir(), "autor3search-go")
+	cmd := exec.Command("go", "build", "-o", bin, "./cmd/autor3search-go")
 	cmd.Dir = moduleRoot
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("go build ./cmd/autoresearch-go: %v\n%s", err, out)
+		t.Fatalf("go build ./cmd/autor3search-go: %v\n%s", err, out)
 	}
 	return bin
 }
@@ -135,7 +135,7 @@ func TestEndToEndUserJourney(t *testing.T) {
 	// this is exactly what init's own summary tells a human to do next —
 	// skipping it is the single most common way to make a copy-pasted
 	// quick start fail on the very next line.
-	commit(t, dir, "autoresearch-go init")
+	commit(t, dir, "autor3search-go init")
 
 	// doctor is informational only (it always exits 0) but sits between
 	// init and baseline in the documented quick start.
