@@ -10,17 +10,15 @@ Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch), w
 does this for a single-GPU LLM training loop. This does it for Go — where the metric
 is `ns/op` instead of `val_bpb`, and where **correctness is not optional**.
 
-> **Status: v0.2.4, early but working.** Validated against three real libraries —
+> **Status: early but working.** Validated against three real libraries —
 > `go-humanize`, `mapstructure` and `google/uuid` — with measured wins in each. Every
 > number in this README and in [the case study](docs/case-study.md) is a real
 > measurement, never an illustration. The case study also records the bugs those runs
 > found in the tool itself.
 >
-> Since v0.1: `status` and `stop` for watching and ending a run without orphaning a
-> running benchmark, a tightened `KEEP` bar (a minimum effect size plus a
-> Bonferroni-corrected significance test), and `AUTORESEARCH_GO_STATE_HOME` to move
-> run state off the user cache. Full notes:
-> [releases](https://github.com/g4lb/autoresearch-go/releases).
+> What version you get, and what changed in it, is on the
+> [releases page](https://github.com/g4lb/autoresearch-go/releases) — this README
+> describes the current one.
 
 ---
 
