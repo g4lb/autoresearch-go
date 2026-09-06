@@ -1,5 +1,7 @@
 # autoresearch-go
 
+[![release](https://img.shields.io/github/v/release/g4lb/autoresearch-go?label=release)](https://github.com/g4lb/autoresearch-go/releases/latest)
+
 **Autonomous AI-driven performance optimization for any Go repository.**
 
 Point your coding agent at your repo and go to sleep. It proposes an optimization,
@@ -189,6 +191,7 @@ clear any pending stop and point the agent back at `program.md`.
 | `status` | Prints where a run is: run branch and whether it is checked out, the frozen baseline commit and the advancing measurement commit, the pinned worktree, how many experiments have run and with what verdicts, whether an `eval` is in flight, and whether a stop is pending. Read-only. Accepts `-tag <tag>` so it works from any branch. |
 | `stop` | Asks the agent to end the run after the experiment it is running: writes a request `eval` reports back as `stop_requested`. `-clear` cancels a pending request; `-force` additionally signals the running `eval` to abandon the current experiment and reports what state that leaves the repository in. Accepts `-tag <tag>`. |
 | `report` | Summarizes `results.tsv`: counts by status, the cumulative speedup as the product of every kept experiment's score, and the largest individual wins. |
+| `version` | Prints which build of the harness is running: the module version for an installed binary, or the commit for one built from a checkout (marked `dirty` when the tree had uncommitted changes). A `results.tsv` row is only as reproducible as the binary that produced it. |
 
 Every command accepts `-C <dir>` to run against a repository other than the current
 directory, rather than changing the process's working directory — safer under
