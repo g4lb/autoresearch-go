@@ -166,15 +166,18 @@ func TestEvalReportsAllocsHintInHumanAndJSONOutput(t *testing.T) {
 	dir := copyDemoRepo(t)
 	mustInit(t, dir)
 
-	// Shrink count/benchtime so measurement finishes quickly. Count must
-	// stay >= config's significance floor (4); the pipeline package's own
-	// eval tests settled on 5 rounds / 50ms as fast and stable.
+	// Shrink count/benchtime so measurement finishes quickly, but not to
+	// 5 rounds: this test asserts KEEP, and 5 v 5 is too few to assert on.
+	// A two-sided Mann-Whitney p clears alpha=0.05 there only while at
+	// most 2 of the 25 cross-comparisons are inverted — 3 is already
+	// p=0.056 — so one stalled round on a shared runner discards a real
+	// win. At 8 v 8 the same bar tolerates 13 of 64.
 	configPath := filepath.Join(dir, config.Path)
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.Count = 5
+	cfg.Count = 8
 	cfg.Benchtime = "50ms"
 	if err := os.WriteFile(configPath, renderConfig(cfg), 0o644); err != nil {
 		t.Fatal(err)

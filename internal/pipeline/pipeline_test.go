@@ -192,10 +192,14 @@ func setupRunWithBenchmarks(t *testing.T, benchmarks []string, extraFiles map[st
 	// clean the separation is (its minimum two-sided p-value at n=3 is
 	// exactly 0.1) — the brief's suggested Count: 3 makes
 	// TestEvalKeepsGenuineOptimization statistically unable to ever pass.
-	// Count: 5 gives real headroom (min p ~= 0.008) against ordinary
-	// measurement noise while still finishing in a few seconds.
+	// Count: 8, because several scenarios here assert KEEP and the floor
+	// is not what constrains them — the tolerated overlap is. At 5 v 5,
+	// p < 0.05 survives at most 2 inverted pairs out of 25 (3 is already
+	// p=0.056), which one stalled round on a loaded runner produces. At
+	// 8 v 8 the same bar tolerates 13 of 64; the extra rounds cost about
+	// a second per measuring scenario at benchtime 50ms.
 	cfg.Benchtime = "50ms"
-	cfg.Count = 5
+	cfg.Count = 8
 
 	cfgBytes, err := yaml.Marshal(cfg)
 	if err != nil {
