@@ -10,7 +10,7 @@ Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch), w
 does this for a single-GPU LLM training loop. This does it for Go — where the metric
 is `ns/op` instead of `val_bpb`, and where **correctness is not optional**.
 
-> **Status: v0.2.3, early but working.** Validated against three real libraries —
+> **Status: v0.2.4, early but working.** Validated against three real libraries —
 > `go-humanize`, `mapstructure` and `google/uuid` — with measured wins in each. Every
 > number in this README and in [the case study](docs/case-study.md) is a real
 > measurement, never an illustration. The case study also records the bugs those runs
