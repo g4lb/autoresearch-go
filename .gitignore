@@ -1,4 +1,8 @@
 .autor3search/
 results.tsv
 run.log
+# The compiled binary. The old name is kept because renaming this
+# pattern un-ignores any stale binary an existing checkout still has,
+# which is how one got committed in 0927e74.
 /autor3search-go
+/autoresearch-go
