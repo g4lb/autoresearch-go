@@ -190,6 +190,21 @@ Every command accepts `-C <dir>` to run against a repository other than the curr
 directory, rather than changing the process's working directory — safer under
 concurrent invocations, and testable without `os.Chdir`.
 
+### Where run state lives
+
+Everything the metric depends on — the frozen golden test copies, the baseline
+record, the pinned worktree — is kept **out of the repository**, under
+`<user cache>/autoresearch-go/<repo hash>/<tag>/`. That is deliberate: the agent
+edits the repository, so in-tree state would be state the agent could rewrite to
+make itself look good.
+
+Set `AUTORESEARCH_GO_STATE_HOME` to an absolute path to put it somewhere else —
+useful in a container or CI runner with no durable cache. Run state is keyed
+underneath it the same way, one directory per repository and one per tag. A
+relative value is refused: it would resolve against whatever directory each
+command happened to run from, so `eval` from a subdirectory and `stop` from the
+repository root would address different state for the same run.
+
 ## Worked example
 
 A word counter. Ordinary Go, with ordinary tests.

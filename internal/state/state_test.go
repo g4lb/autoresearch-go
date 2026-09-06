@@ -222,3 +222,64 @@ func TestStateDirOutOfTreeAndDeterministic(t *testing.T) {
 		t.Errorf("two different tags for the same repo produced the same state dir %q", d1)
 	}
 }
+
+func TestStateDirUsesTheStateHomeOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(StateHomeEnv, home)
+
+	dir, err := StateDir(t.TempDir(), "sep4")
+	if err != nil {
+		t.Fatalf("StateDir: %v", err)
+	}
+	if !strings.HasPrefix(dir, home+string(filepath.Separator)) {
+		t.Errorf("StateDir = %q, want it under the override %q", dir, home)
+	}
+	if filepath.Base(dir) != "sep4" {
+		t.Errorf("StateDir = %q, want it to end in the run tag", dir)
+	}
+}
+
+func TestStateDirFallsBackToTheUserCache(t *testing.T) {
+	t.Setenv(StateHomeEnv, "")
+
+	dir, err := StateDir(t.TempDir(), "sep4")
+	if err != nil {
+		t.Fatalf("StateDir: %v", err)
+	}
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		t.Skipf("no user cache dir on this platform: %v", err)
+	}
+	want := filepath.Join(cache, StateDirName)
+	if !strings.HasPrefix(dir, want+string(filepath.Separator)) {
+		t.Errorf("StateDir = %q, want it under %q when the override is unset", dir, want)
+	}
+}
+
+func TestStateDirRejectsARelativeOverride(t *testing.T) {
+	// A relative override would resolve against whatever directory the
+	// process happens to be in, so the same run would resolve to different
+	// state depending on where the command was invoked from.
+	t.Setenv(StateHomeEnv, "relative/state")
+
+	if _, err := StateDir(t.TempDir(), "sep4"); err == nil {
+		t.Fatal("StateDir accepted a relative override; want an error")
+	}
+}
+
+func TestStateDirKeepsRepositoriesApartUnderAnOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(StateHomeEnv, home)
+
+	a, err := StateDir(t.TempDir(), "sep4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := StateDir(t.TempDir(), "sep4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a == b {
+		t.Errorf("two repositories share a state dir under an override: %q", a)
+	}
+}
