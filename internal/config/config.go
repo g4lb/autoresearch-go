@@ -1,4 +1,4 @@
-// Package config loads and validates the autoresearch-go run configuration.
+// Package config loads and validates the autor3search-go run configuration.
 package config
 
 import (
@@ -13,7 +13,7 @@ import (
 )
 
 // Path is the config location relative to the repository root.
-const Path = ".autoresearch/config.yaml"
+const Path = ".autor3search/config.yaml"
 
 // Config controls what is measured, what may be edited, and how strictly.
 type Config struct {

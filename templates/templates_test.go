@@ -17,7 +17,7 @@ func TestProgramMDEmbedsContent(t *testing.T) {
 // program.md told the agent to write its own rows to results.tsv, using a
 // schema incompatible with the one internal/results.Load actually parses
 // (eval already appends one harness-owned row per invocation; see
-// cmd/autoresearch-go/cmd_eval.go and internal/results/results.go). An
+// cmd/autor3search-go/cmd_eval.go and internal/results/results.go). An
 // agent following the old instructions corrupted results.tsv, which fails
 // every later `report` or `baseline -force` on the whole file.
 func TestProgramMDResultsTSVOwnership(t *testing.T) {
@@ -56,13 +56,13 @@ func contains(s, sub string) bool {
 // contract. The loop is written as "LOOP FOREVER", so the ONLY thing that
 // ends it short of an interrupt is the agent noticing stop_requested in a
 // verdict and acting on it. If program.md stops telling the agent that, a
-// human running `autoresearch-go stop` gets no response at all.
+// human running `autor3search-go stop` gets no response at all.
 func TestProgramMDDocumentsTheGracefulStop(t *testing.T) {
 	s := string(ProgramMD())
 
 	for _, want := range []string{
 		"stop_requested", // the field the agent branches on
-		"autoresearch-go stop",
+		"autor3search-go stop",
 	} {
 		if !contains(s, want) {
 			t.Errorf("ProgramMD() missing %q — the agent cannot honour a graceful stop without it", want)

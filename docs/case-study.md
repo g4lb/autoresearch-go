@@ -1,6 +1,6 @@
 # Case study: optimizing github.com/dustin/go-humanize
 
-A real run of `autoresearch-go` against a real, maintained, third-party Go
+A real run of `autor3search-go` against a real, maintained, third-party Go
 library. Every number here was measured; nothing is illustrative.
 
 ## Setup

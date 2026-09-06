@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/g4lb/autoresearch-go/internal/gitx"
-	"github.com/g4lb/autoresearch-go/internal/results"
-	"github.com/g4lb/autoresearch-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/gitx"
+	"github.com/g4lb/autor3search-go/internal/results"
+	"github.com/g4lb/autor3search-go/internal/state"
 )
 
 func TestStatusShowsTheRunContext(t *testing.T) {
@@ -23,7 +23,7 @@ func TestStatusShowsTheRunContext(t *testing.T) {
 		"sep4",                // the run tag
 		branchPrefix + "sep4", // the branch the agent commits on
 		filepath.Join(stateDir, state.WorktreeName), // the pinned worktree
-		"autoresearch-go stop",                      // how to stop
+		"autor3search-go stop",                      // how to stop
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("status output missing %q:\n%s", want, stdout)

@@ -102,7 +102,7 @@ func ClaimEval(stateDir string, pid int) (release func() error, err error) {
 	if !locked {
 		other, _, _ := readPIDFile(path)
 		f.Close()
-		return nil, fmt.Errorf("another autoresearch-go eval (pid %d) is already running for this run", other)
+		return nil, fmt.Errorf("another autor3search-go eval (pid %d) is already running for this run", other)
 	}
 	if err := f.Truncate(0); err != nil {
 		f.Close()

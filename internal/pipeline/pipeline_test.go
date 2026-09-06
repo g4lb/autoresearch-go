@@ -12,19 +12,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/g4lb/autoresearch-go/internal/bench"
-	"github.com/g4lb/autoresearch-go/internal/config"
-	"github.com/g4lb/autoresearch-go/internal/discover"
-	"github.com/g4lb/autoresearch-go/internal/freeze"
-	"github.com/g4lb/autoresearch-go/internal/gitx"
-	"github.com/g4lb/autoresearch-go/internal/state"
-	"github.com/g4lb/autoresearch-go/internal/verdict"
+	"github.com/g4lb/autor3search-go/internal/bench"
+	"github.com/g4lb/autor3search-go/internal/config"
+	"github.com/g4lb/autor3search-go/internal/discover"
+	"github.com/g4lb/autor3search-go/internal/freeze"
+	"github.com/g4lb/autor3search-go/internal/gitx"
+	"github.com/g4lb/autor3search-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/verdict"
 	"gopkg.in/yaml.v3"
 )
 
 // --- test helpers -----------------------------------------------------
 //
-// internal/pipeline cannot import cmd/autoresearch-go's test helpers (they
+// internal/pipeline cannot import cmd/autor3search-go's test helpers (they
 // are unexported and live in package main), so the small slice of them this
 // package needs — copying the demo fixture, running git, committing — is
 // reimplemented here.
@@ -155,10 +155,10 @@ func (e *evalEnv) Options() Options {
 }
 
 // setupRun produces a repository that has been through init (a written
-// .autoresearch/config.yaml, committed) and baseline (frozen tests, a
+// .autor3search/config.yaml, committed) and baseline (frozen tests, a
 // recorded state.Baseline, and a pinned baseline worktree) — mirroring what
-// a human running `autoresearch-go init && autoresearch-go baseline` would
-// leave behind, using the internal packages directly since cmd/autoresearch-go's
+// a human running `autor3search-go init && autor3search-go baseline` would
+// leave behind, using the internal packages directly since cmd/autor3search-go's
 // runInit/runBaseline live in package main and cannot be imported here.
 func setupRun(t *testing.T) *evalEnv {
 	t.Helper()
@@ -212,10 +212,10 @@ func setupRunWithBenchmarks(t *testing.T, benchmarks []string, extraFiles map[st
 	if err := os.WriteFile(configPath, cfgBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	commit(t, root, "autoresearch-go init")
+	commit(t, root, "autor3search-go init")
 
 	tag := "test"
-	branch := "autoresearch-go/" + tag
+	branch := "autor3search-go/" + tag
 	runGit(t, root, "checkout", "-q", "-b", branch)
 
 	stateDir, err := state.StateDir(root, tag)
@@ -274,7 +274,7 @@ func setupRunWithBenchmarks(t *testing.T, benchmarks []string, extraFiles map[st
 // that is both correct (passes the frozen tests) and substantially faster.
 func writeOptimizedWordCount(t *testing.T, root string) {
 	t.Helper()
-	const src = `// Package demo is a fixture for autoresearch-go's own integration tests.
+	const src = `// Package demo is a fixture for autor3search-go's own integration tests.
 package demo
 
 import "strings"
@@ -317,7 +317,7 @@ func CountWords(s string) map[string]int {
 // fast but wrong: it always reports no words at all.
 func writeBrokenWordCount(t *testing.T, root string) {
 	t.Helper()
-	const src = `// Package demo is a fixture for autoresearch-go's own integration tests.
+	const src = `// Package demo is a fixture for autor3search-go's own integration tests.
 package demo
 
 // CountWords is deliberately broken: it always reports no words.
@@ -551,7 +551,7 @@ func TestEvalFailsWhenBaselineWorktreeTampered(t *testing.T) {
 	// Simulate an agent (or an accidental clobber) editing the pinned
 	// baseline worktree in place: check out a different commit inside it
 	// so its HEAD no longer matches env.Base.Commit. copyDemoRepo's
-	// "initial commit" is the parent of setupRun's "autoresearch-go init"
+	// "initial commit" is the parent of setupRun's "autor3search-go init"
 	// commit (the pinned baseline commit), so HEAD~1 inside the worktree
 	// reaches it.
 	worktreeDir := filepath.Join(env.StateDir, state.WorktreeName)

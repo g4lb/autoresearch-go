@@ -1,7 +1,7 @@
 // Package pipeline runs one full evaluation: it gates correctness, measures
 // a candidate against the pinned baseline, and returns a verdict.
 //
-// It lives here rather than in cmd/autoresearch-go so it is testable
+// It lives here rather than in cmd/autor3search-go so it is testable
 // without a process boundary — the eval command itself handles only flags,
 // output formatting and the exit code.
 package pipeline
@@ -17,17 +17,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/g4lb/autoresearch-go/internal/bench"
-	"github.com/g4lb/autoresearch-go/internal/config"
-	"github.com/g4lb/autoresearch-go/internal/discover"
-	"github.com/g4lb/autoresearch-go/internal/freeze"
-	"github.com/g4lb/autoresearch-go/internal/gitx"
-	"github.com/g4lb/autoresearch-go/internal/measure"
-	"github.com/g4lb/autoresearch-go/internal/results"
-	"github.com/g4lb/autoresearch-go/internal/runner"
-	"github.com/g4lb/autoresearch-go/internal/scope"
-	"github.com/g4lb/autoresearch-go/internal/state"
-	"github.com/g4lb/autoresearch-go/internal/verdict"
+	"github.com/g4lb/autor3search-go/internal/bench"
+	"github.com/g4lb/autor3search-go/internal/config"
+	"github.com/g4lb/autor3search-go/internal/discover"
+	"github.com/g4lb/autor3search-go/internal/freeze"
+	"github.com/g4lb/autor3search-go/internal/gitx"
+	"github.com/g4lb/autor3search-go/internal/measure"
+	"github.com/g4lb/autor3search-go/internal/results"
+	"github.com/g4lb/autor3search-go/internal/runner"
+	"github.com/g4lb/autor3search-go/internal/scope"
+	"github.com/g4lb/autor3search-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/verdict"
 )
 
 // RunLogName is the harness-owned scratch log inside the repository root.
@@ -145,7 +145,7 @@ func Eval(ctx context.Context, o Options) (verdict.Result, *Measurements, error)
 	if cfgSum != o.Base.ConfigSHA256 {
 		return verdict.Gate(verdict.StatusFail, verdict.ReasonConfigChanged,
 			fmt.Sprintf("%s changed since baseline — scoring rules are fixed for a run; "+
-				"revert it, or start a new run with 'autoresearch-go baseline'", config.Path)), nil, nil
+				"revert it, or start a new run with 'autor3search-go baseline'", config.Path)), nil, nil
 	}
 
 	// 2. Restore frozen tests. Agent edits to tests are erased, not argued with.
@@ -192,7 +192,7 @@ func Eval(ctx context.Context, o Options) (verdict.Result, *Measurements, error)
 	if len(added) > 0 {
 		return verdict.Gate(verdict.StatusFail, verdict.ReasonNewTestFile,
 			fmt.Sprintf("test files not present at baseline: %v — the benchmark set is frozen; "+
-				"add them before running 'autoresearch-go baseline', or list them in config unfreeze", added)), nil, nil
+				"add them before running 'autor3search-go baseline', or list them in config unfreeze", added)), nil, nil
 	}
 
 	r := runner.New(o.Root, timeout, o.Log)
@@ -257,7 +257,7 @@ func Eval(ctx context.Context, o Options) (verdict.Result, *Measurements, error)
 		return verdict.Gate(verdict.StatusFail, verdict.ReasonBaselineTampered,
 			fmt.Sprintf("pinned baseline worktree HEAD is %s but the recorded measurement commit is %s — "+
 				"the worktree no longer matches the baseline and this run's measurements cannot be trusted. "+
-				"Start a fresh run with 'autoresearch-go baseline'.", worktreeHead, o.Base.MeasureCommit)), nil, nil
+				"Start a fresh run with 'autor3search-go baseline'.", worktreeHead, o.Base.MeasureCommit)), nil, nil
 	}
 
 	// 6. Measure, interleaved against the pinned baseline worktree.

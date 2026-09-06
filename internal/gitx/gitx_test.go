@@ -53,14 +53,14 @@ func TestHeadCommitAndBranch(t *testing.T) {
 func TestBranchLifecycle(t *testing.T) {
 	dir := repo(t)
 
-	ok, err := BranchExists(dir, "autoresearch-go/sep4")
+	ok, err := BranchExists(dir, "autor3search-go/sep4")
 	if err != nil || ok {
 		t.Fatalf("BranchExists = %v, %v; want false, nil", ok, err)
 	}
-	if err := CreateBranch(dir, "autoresearch-go/sep4"); err != nil {
+	if err := CreateBranch(dir, "autor3search-go/sep4"); err != nil {
 		t.Fatalf("CreateBranch: %v", err)
 	}
-	ok, err = BranchExists(dir, "autoresearch-go/sep4")
+	ok, err = BranchExists(dir, "autor3search-go/sep4")
 	if err != nil || !ok {
 		t.Fatalf("BranchExists = %v, %v; want true, nil", ok, err)
 	}
@@ -73,11 +73,11 @@ func TestCheckoutAndDeleteBranch(t *testing.T) {
 		t.Fatalf("CurrentBranch: %v", err)
 	}
 
-	if err := CreateBranch(dir, "autoresearch-go/sep4"); err != nil {
+	if err := CreateBranch(dir, "autor3search-go/sep4"); err != nil {
 		t.Fatalf("CreateBranch: %v", err)
 	}
-	if br, _ := CurrentBranch(dir); br != "autoresearch-go/sep4" {
-		t.Fatalf("CurrentBranch = %q, want autoresearch-go/sep4", br)
+	if br, _ := CurrentBranch(dir); br != "autor3search-go/sep4" {
+		t.Fatalf("CurrentBranch = %q, want autor3search-go/sep4", br)
 	}
 
 	if err := Checkout(dir, original); err != nil {
@@ -87,11 +87,11 @@ func TestCheckoutAndDeleteBranch(t *testing.T) {
 		t.Fatalf("CurrentBranch = %q after Checkout, want %q", br, original)
 	}
 
-	if err := DeleteBranch(dir, "autoresearch-go/sep4"); err != nil {
+	if err := DeleteBranch(dir, "autor3search-go/sep4"); err != nil {
 		t.Fatalf("DeleteBranch: %v", err)
 	}
-	if ok, _ := BranchExists(dir, "autoresearch-go/sep4"); ok {
-		t.Error("autoresearch-go/sep4 still exists after DeleteBranch")
+	if ok, _ := BranchExists(dir, "autor3search-go/sep4"); ok {
+		t.Error("autor3search-go/sep4 still exists after DeleteBranch")
 	}
 }
 

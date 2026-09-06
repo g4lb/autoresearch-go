@@ -17,7 +17,7 @@ func TestVersionReportsTheModuleVersionOfAReleasedBuild(t *testing.T) {
 	}
 
 	got := formatBuildVersion(info)
-	want := "autoresearch-go v0.2.4\nbuilt with go1.26.5, darwin/arm64"
+	want := "autor3search-go v0.2.4\nbuilt with go1.26.5, darwin/arm64"
 	if got != want {
 		t.Errorf("formatBuildVersion() =\n%s\nwant\n%s", got, want)
 	}
@@ -39,7 +39,7 @@ func TestVersionReportsTheCommitOfABuildFromASourceCheckout(t *testing.T) {
 	}
 
 	got := formatBuildVersion(info)
-	want := "autoresearch-go (devel, 1aaaf4b)\nbuilt with go1.26.5, linux/amd64"
+	want := "autor3search-go (devel, 1aaaf4b)\nbuilt with go1.26.5, linux/amd64"
 	if got != want {
 		t.Errorf("formatBuildVersion() =\n%s\nwant\n%s", got, want)
 	}
@@ -82,7 +82,7 @@ func TestVersionPassesAPseudoVersionThroughVerbatim(t *testing.T) {
 	}
 
 	got := formatBuildVersion(info)
-	want := "autoresearch-go v0.2.5-0.20260906165138-0d7ff5a952a1+dirty\nbuilt with go1.26.5, darwin/arm64"
+	want := "autor3search-go v0.2.5-0.20260906165138-0d7ff5a952a1+dirty\nbuilt with go1.26.5, darwin/arm64"
 	if got != want {
 		t.Errorf("formatBuildVersion() =\n%s\nwant\n%s", got, want)
 	}
@@ -92,7 +92,7 @@ func TestVersionSurvivesBuildInfoBeingUnavailable(t *testing.T) {
 	// debug.ReadBuildInfo reports ok=false for a binary built without module
 	// support. Reporting "unknown" beats panicking on a nil pointer.
 	got := formatBuildVersion(nil)
-	want := "autoresearch-go (version unknown)"
+	want := "autor3search-go (version unknown)"
 	if got != want {
 		t.Errorf("formatBuildVersion(nil) = %q, want %q", got, want)
 	}
@@ -102,7 +102,7 @@ func TestVersionOmitsThePlatformLineWhenTheBuildDoesNotRecordIt(t *testing.T) {
 	info := &debug.BuildInfo{Main: debug.Module{Version: "v0.2.4"}}
 
 	got := formatBuildVersion(info)
-	want := "autoresearch-go v0.2.4"
+	want := "autor3search-go v0.2.4"
 	if got != want {
 		t.Errorf("formatBuildVersion() = %q, want %q", got, want)
 	}
@@ -115,7 +115,7 @@ func TestRunVersionPrintsToStdoutAndSucceeds(t *testing.T) {
 	if code != exitOK {
 		t.Errorf("runVersion() = %d, want %d", code, exitOK)
 	}
-	if !strings.HasPrefix(out, "autoresearch-go ") {
+	if !strings.HasPrefix(out, "autor3search-go ") {
 		t.Errorf("runVersion() printed %q, want it to start with the binary name", out)
 	}
 	if !strings.HasSuffix(out, "\n") {

@@ -15,7 +15,7 @@ import (
 )
 
 // StateDirName is the per-repository state directory name under the user cache.
-const StateDirName = "autoresearch-go"
+const StateDirName = "autor3search-go"
 
 // StateHomeEnv names the environment variable that relocates every run's
 // out-of-tree state, replacing the default location under the user cache.
@@ -29,7 +29,7 @@ const StateDirName = "autoresearch-go"
 // The value must be an absolute path, and run state is keyed underneath it
 // exactly as it is under the cache: one directory per repository, one per
 // tag within that.
-const StateHomeEnv = "AUTORESEARCH_GO_STATE_HOME"
+const StateHomeEnv = "AUTOR3SEARCH_GO_STATE_HOME"
 
 // validTagPattern is the strict allow-list ValidTag enforces: letters,
 // digits, '.', '_' and '-'. Notably absent is '/' (or any other path
@@ -70,7 +70,7 @@ func ValidTag(tag string) error {
 // metric depends on, for one repository and run tag.
 //
 // NONE of this may live inside the repository. The agent edits the repository;
-// `.autoresearch/` is gitignored so ChangedSince cannot observe edits to it;
+// `.autor3search/` is gitignored so ChangedSince cannot observe edits to it;
 // and the scope gate must otherwise ignore it. In-tree state would therefore be
 // silently writable by the very agent it constrains. An agent could edit the
 // frozen golden copies, delete a key from manifest.json, raise
@@ -216,7 +216,7 @@ func (b *Baseline) Save(path string) error {
 func LoadBaseline(path string) (*Baseline, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("no baseline at %s: run 'autoresearch-go baseline' first", path)
+		return nil, fmt.Errorf("no baseline at %s: run 'autor3search-go baseline' first", path)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read baseline: %w", err)

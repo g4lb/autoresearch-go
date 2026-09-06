@@ -5,7 +5,7 @@ package state_test
 import (
 	"testing"
 
-	"github.com/g4lb/autoresearch-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/state"
 )
 
 // Unix-only: the assertion is that a HELD claim reads as running, which is

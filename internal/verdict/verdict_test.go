@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/g4lb/autoresearch-go/internal/bench"
+	"github.com/g4lb/autor3search-go/internal/bench"
 )
 
 // d builds a Delta at the standard alpha (0.05). sig=true gives it a p-value

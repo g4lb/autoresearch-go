@@ -13,20 +13,20 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/g4lb/autoresearch-go/internal/bench"
-	"github.com/g4lb/autoresearch-go/internal/config"
-	"github.com/g4lb/autoresearch-go/internal/gitx"
-	"github.com/g4lb/autoresearch-go/internal/pipeline"
-	"github.com/g4lb/autoresearch-go/internal/results"
-	"github.com/g4lb/autoresearch-go/internal/state"
-	"github.com/g4lb/autoresearch-go/internal/verdict"
+	"github.com/g4lb/autor3search-go/internal/bench"
+	"github.com/g4lb/autor3search-go/internal/config"
+	"github.com/g4lb/autor3search-go/internal/gitx"
+	"github.com/g4lb/autor3search-go/internal/pipeline"
+	"github.com/g4lb/autor3search-go/internal/results"
+	"github.com/g4lb/autor3search-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/verdict"
 )
 
 // branchPrefix is the run-branch naming convention `baseline` establishes.
 // resolveRunRef strips it to recover the run tag, which is how eval, status
 // and stop all find a run's state.StateDir (frozen tests, baseline record,
 // pinned worktree).
-const branchPrefix = "autoresearch-go/"
+const branchPrefix = "autor3search-go/"
 
 // runEval runs one experiment, wiring interrupt handling around it.
 //
@@ -72,7 +72,7 @@ func runEvalCtx(ctx context.Context, args []string) int {
 	}
 	base, err := state.LoadBaseline(filepath.Join(stateDir, state.BaselineFile))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go eval: %v\n", err)
 		return exitUsage
 	}
 
@@ -83,9 +83,9 @@ func runEvalCtx(ctx context.Context, args []string) int {
 	// actually there before doing any work.
 	worktreeDir := ref.WorktreeDir()
 	if fi, statErr := os.Stat(worktreeDir); statErr != nil || !fi.IsDir() {
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: baseline worktree missing at %s — "+
-			"'autoresearch-go baseline -tag %s' did not finish pinning it (interrupted, or the "+
-			"directory was later removed). Re-run `autoresearch-go baseline -tag %s -force`.\n",
+		fmt.Fprintf(os.Stderr, "autor3search-go eval: baseline worktree missing at %s — "+
+			"'autor3search-go baseline -tag %s' did not finish pinning it (interrupted, or the "+
+			"directory was later removed). Re-run `autor3search-go baseline -tag %s -force`.\n",
 			worktreeDir, ref.Tag, ref.Tag)
 		return exitUsage
 	}
@@ -96,7 +96,7 @@ func runEvalCtx(ctx context.Context, args []string) int {
 	// signal. It is released on every exit path below.
 	release, err := state.ClaimEval(stateDir, os.Getpid())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go eval: %v\n", err)
 		return exitUsage
 	}
 	defer release()
@@ -133,7 +133,7 @@ func runEvalCtx(ctx context.Context, args []string) int {
 		if logWriter == nil {
 			logFile, ferr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 			if ferr != nil {
-				fmt.Fprintf(os.Stderr, "autoresearch-go eval: open %s: %v\n", logPath, ferr)
+				fmt.Fprintf(os.Stderr, "autor3search-go eval: open %s: %v\n", logPath, ferr)
 				return exitUsage
 			}
 			defer logFile.Close()
@@ -162,7 +162,7 @@ func runEvalCtx(ctx context.Context, args []string) int {
 		// (I/O, git, a malformed baseline) — not that the candidate was
 		// rejected. verdict.Result.ExitCode() would misreport that as a
 		// gate failure, so this is reported and exits separately.
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go eval: %v\n", err)
 		return exitUsage
 	}
 
@@ -176,7 +176,7 @@ func runEvalCtx(ctx context.Context, args []string) int {
 
 	commit, cErr := gitx.HeadCommit(root)
 	if cErr != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", cErr)
+		fmt.Fprintf(os.Stderr, "autor3search-go eval: %v\n", cErr)
 		return exitUsage
 	}
 	resultsPath := filepath.Join(root, results.Path)
@@ -193,7 +193,7 @@ func runEvalCtx(ctx context.Context, args []string) int {
 		Status:      strings.ToLower(string(res.Status)),
 		Description: *desc,
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: append %s: %v\n", resultsPath, err)
+		fmt.Fprintf(os.Stderr, "autor3search-go eval: append %s: %v\n", resultsPath, err)
 		return exitUsage
 	}
 
@@ -480,7 +480,7 @@ func printStopNotice(rc runCtx) {
 		return
 	}
 	fmt.Println("\nSTOP REQUESTED: apply this verdict, then exit the loop.")
-	fmt.Println("To resume instead: autoresearch-go stop -clear")
+	fmt.Println("To resume instead: autor3search-go stop -clear")
 }
 
 // printWarnings renders what qualifies the numbers above it: benchmath's
