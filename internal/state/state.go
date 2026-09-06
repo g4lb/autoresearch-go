@@ -17,6 +17,20 @@ import (
 // StateDirName is the per-repository state directory name under the user cache.
 const StateDirName = "autoresearch-go"
 
+// StateHomeEnv names the environment variable that relocates every run's
+// out-of-tree state, replacing the default location under the user cache.
+//
+// It exists for the two cases where the user cache is the wrong place: a
+// container or CI runner with no durable cache to speak of, and a TEST
+// SUITE, which would otherwise accumulate a directory per temporary
+// repository in the developer's real cache forever — this project's own
+// tests create one on every run.
+//
+// The value must be an absolute path, and run state is keyed underneath it
+// exactly as it is under the cache: one directory per repository, one per
+// tag within that.
+const StateHomeEnv = "AUTORESEARCH_GO_STATE_HOME"
+
 // validTagPattern is the strict allow-list ValidTag enforces: letters,
 // digits, '.', '_' and '-'. Notably absent is '/' (or any other path
 // separator), which alone is enough to block both directory traversal
@@ -83,12 +97,36 @@ func StateDir(repoRoot, tag string) (string, error) {
 	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
 		abs = resolved
 	}
+	home, err := stateHome()
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(abs))
+	return filepath.Join(home, hex.EncodeToString(sum[:])[:16], tag), nil
+}
+
+// stateHome returns the directory holding every repository's run state:
+// StateHomeEnv when set, otherwise the conventional spot under the user
+// cache.
+//
+// A relative override is refused rather than resolved. filepath.Join would
+// happily accept one, but the result would then depend on the working
+// directory each command was invoked from — so `eval` run from a
+// subdirectory and `stop` run from the repository root would address
+// DIFFERENT state for the same run, and the brake would silently miss.
+func stateHome() (string, error) {
+	if home := os.Getenv(StateHomeEnv); home != "" {
+		if !filepath.IsAbs(home) {
+			return "", fmt.Errorf("%s must be an absolute path, got %q: a relative state home would "+
+				"resolve differently depending on where each command is run from", StateHomeEnv, home)
+		}
+		return home, nil
+	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
 		return "", fmt.Errorf("locate user cache dir: %w", err)
 	}
-	sum := sha256.Sum256([]byte(abs))
-	return filepath.Join(cache, StateDirName, hex.EncodeToString(sum[:])[:16], tag), nil
+	return filepath.Join(cache, StateDirName), nil
 }
 
 // Paths within a run's StateDir.
