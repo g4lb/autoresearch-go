@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/g4lb/autoresearch-go/internal/doctor"
+	"github.com/g4lb/autor3search-go/internal/doctor"
 )
 
 // runDoctor checks whether this machine can measure reliably.

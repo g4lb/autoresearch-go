@@ -131,7 +131,7 @@ func copyFile(t *testing.T, src, dst string) {
 }
 
 // demoRepoSrc locates the shared testdata/demo fixture relative to this
-// package, which lives at cmd/autoresearch-go.
+// package, which lives at cmd/autor3search-go.
 func demoRepoSrc(t *testing.T) string {
 	t.Helper()
 	dir, err := filepath.Abs(filepath.Join("..", "..", "testdata", "demo"))
@@ -162,7 +162,7 @@ func copyDemoRepo(t *testing.T) string {
 }
 
 // mustInit runs runInit against dir (via -C) and fails the test unless it
-// succeeds. It then commits init's output (.gitignore, .autoresearch/config.yaml,
+// succeeds. It then commits init's output (.gitignore, .autor3search/config.yaml,
 // program.md), mirroring the realistic workflow where a human commits the
 // generated files before running baseline. Later tasks (baseline, eval) need
 // an already-initialized AND clean repository to build on: baseline refuses
@@ -173,5 +173,5 @@ func mustInit(t *testing.T, dir string) {
 		t.Fatalf("runInit(-C %s) = %d, want %d", dir, code, exitOK)
 	}
 	runGit(t, dir, "add", "-A")
-	runGit(t, dir, "commit", "-q", "-m", "autoresearch-go init")
+	runGit(t, dir, "commit", "-q", "-m", "autor3search-go init")
 }

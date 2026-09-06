@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/g4lb/autoresearch-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/state"
 )
 
 func TestStopRequestedFalseWhenNoSentinel(t *testing.T) {

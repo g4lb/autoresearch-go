@@ -1,5 +1,5 @@
 // Package templates holds files written into a user's repository by
-// `autoresearch-go init`.
+// `autor3search-go init`.
 package templates
 
 import _ "embed"

@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/g4lb/autoresearch-go/internal/gitx"
-	"github.com/g4lb/autoresearch-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/gitx"
+	"github.com/g4lb/autor3search-go/internal/state"
 )
 
 // defaultForceGrace is how long `stop -force` waits for a signalled eval to
@@ -46,7 +46,7 @@ func runStop(args []string) int {
 		return exitUsage
 	}
 	if *clear && *force {
-		fmt.Fprintln(os.Stderr, "autoresearch-go stop: -clear and -force are opposites; pass one or neither")
+		fmt.Fprintln(os.Stderr, "autor3search-go stop: -clear and -force are opposites; pass one or neither")
 		return exitUsage
 	}
 
@@ -57,24 +57,24 @@ func runStop(args []string) int {
 
 	if *clear {
 		if err := state.ClearStop(ref.StateDir); err != nil {
-			fmt.Fprintf(os.Stderr, "autoresearch-go stop: %v\n", err)
+			fmt.Fprintf(os.Stderr, "autor3search-go stop: %v\n", err)
 			return exitUsage
 		}
 		fmt.Printf("stop request cleared for run %q\n", ref.Tag)
-		fmt.Println("the agent will keep experimenting; run `autoresearch-go stop` again to stop it")
+		fmt.Println("the agent will keep experimenting; run `autor3search-go stop` again to stop it")
 		return exitOK
 	}
 
 	if err := state.RequestStop(ref.StateDir); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go stop: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go stop: %v\n", err)
 		return exitUsage
 	}
 	fmt.Printf("stop requested for run %q\n", ref.Tag)
 
 	if !*force {
 		fmt.Println("the agent will finish the experiment it is running and then exit the loop")
-		fmt.Println("to cancel:      autoresearch-go stop -clear")
-		fmt.Println("to stop sooner: autoresearch-go stop -force")
+		fmt.Println("to cancel:      autor3search-go stop -clear")
+		fmt.Println("to stop sooner: autor3search-go stop -force")
 		return exitOK
 	}
 	return forceStop(ref, *grace)
@@ -88,7 +88,7 @@ func forceStop(ref runRef, grace time.Duration) int {
 	if err != nil {
 		// A corrupt pid file is reported, not guessed at — see
 		// state.EvalRunning. The stop request still stands.
-		fmt.Fprintf(os.Stderr, "autoresearch-go stop: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go stop: %v\n", err)
 		fmt.Fprintln(os.Stderr, "the stop request was written; the agent will still stop at its next verdict")
 		return exitUsage
 	}
@@ -97,7 +97,7 @@ func forceStop(ref runRef, grace time.Duration) int {
 		// Either nothing was in flight, or an eval died without releasing
 		// its claim. Clearing the leftover keeps `status` honest.
 		if err := state.ClearEvalPID(ref.StateDir); err != nil {
-			fmt.Fprintf(os.Stderr, "autoresearch-go stop: %v\n", err)
+			fmt.Fprintf(os.Stderr, "autor3search-go stop: %v\n", err)
 			return exitUsage
 		}
 		fmt.Println("no eval running — nothing to signal")
@@ -107,18 +107,18 @@ func forceStop(ref runRef, grace time.Duration) int {
 
 	fmt.Printf("signalling eval (pid %d)...\n", pid)
 	if err := termEval(pid); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go stop: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go stop: %v\n", err)
 		return exitUsage
 	}
 	killed := false
 	if !waitForRelease(ref.StateDir, grace) {
 		fmt.Printf("eval did not exit within %s; killing its process group\n", grace)
 		if err := killEvalGroup(pid); err != nil {
-			fmt.Fprintf(os.Stderr, "autoresearch-go stop: %v\n", err)
+			fmt.Fprintf(os.Stderr, "autor3search-go stop: %v\n", err)
 			return exitUsage
 		}
 		if !waitForRelease(ref.StateDir, grace) {
-			fmt.Fprintf(os.Stderr, "autoresearch-go stop: eval (pid %d) still holds the run after SIGKILL\n", pid)
+			fmt.Fprintf(os.Stderr, "autor3search-go stop: eval (pid %d) still holds the run after SIGKILL\n", pid)
 			return exitUsage
 		}
 		killed = true
@@ -133,7 +133,7 @@ func forceStop(ref runRef, grace time.Duration) int {
 	// signal — the brake failing precisely when it is reached for.
 	if killed {
 		if err := state.ClearEvalPID(ref.StateDir); err != nil {
-			fmt.Fprintf(os.Stderr, "autoresearch-go stop: %v\n", err)
+			fmt.Fprintf(os.Stderr, "autor3search-go stop: %v\n", err)
 			return exitUsage
 		}
 	}
@@ -185,5 +185,5 @@ func printRepoState(ref runRef) {
 	fmt.Println()
 	fmt.Println("if the agent had already committed the experiment it was running, that commit")
 	fmt.Println("carries no verdict. To drop it:  git reset --hard HEAD~1")
-	fmt.Println("to resume this run later:        autoresearch-go stop -clear")
+	fmt.Println("to resume this run later:        autor3search-go stop -clear")
 }

@@ -14,7 +14,7 @@ func TestBaselineRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "baseline.json")
 	want := &Baseline{
 		Tag:          "sep4",
-		Branch:       "autoresearch-go/sep4",
+		Branch:       "autor3search-go/sep4",
 		Commit:       "a1b2c3d",
 		CreatedAt:    time.Now().UTC().Truncate(time.Second),
 		Benchmarks:   []string{"BenchmarkCountWords"},
@@ -40,7 +40,7 @@ func TestBaselineMeasureCommitRoundTrips(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "baseline.json")
 	want := &Baseline{
 		Tag:           "sep4",
-		Branch:        "autoresearch-go/sep4",
+		Branch:        "autor3search-go/sep4",
 		Commit:        "a1b2c3d",
 		MeasureCommit: "e4f5a6b", // advanced past Commit by a KEEP
 		CreatedAt:     time.Now().UTC().Truncate(time.Second),
@@ -72,7 +72,7 @@ func TestLoadBaselineDefaultsMeasureCommitToCommit(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "baseline.json")
 	const oldFormat = `{
   "tag": "sep4",
-  "branch": "autoresearch-go/sep4",
+  "branch": "autor3search-go/sep4",
   "commit": "a1b2c3d",
   "created_at": "2026-01-01T00:00:00Z",
   "benchmarks": ["BenchmarkCountWords"],

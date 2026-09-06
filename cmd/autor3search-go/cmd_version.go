@@ -35,7 +35,7 @@ func runVersion(args []string) int {
 // bare "(devel)" identifies nothing.
 func formatBuildVersion(info *debug.BuildInfo) string {
 	if info == nil {
-		return "autoresearch-go (version unknown)"
+		return "autor3search-go (version unknown)"
 	}
 
 	settings := make(map[string]string, len(info.Settings))
@@ -48,7 +48,7 @@ func formatBuildVersion(info *debug.BuildInfo) string {
 		version = checkoutVersion(settings)
 	}
 
-	lines := []string{"autoresearch-go " + version}
+	lines := []string{"autor3search-go " + version}
 	if platform := buildPlatform(settings); platform != "" && info.GoVersion != "" {
 		lines = append(lines, fmt.Sprintf("built with %s, %s", info.GoVersion, platform))
 	}

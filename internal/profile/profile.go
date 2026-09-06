@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/g4lb/autoresearch-go/internal/discover"
-	"github.com/g4lb/autoresearch-go/internal/runner"
+	"github.com/g4lb/autor3search-go/internal/discover"
+	"github.com/g4lb/autor3search-go/internal/runner"
 )
 
 // PackageReport is the CPU/memory profiling output for one package.
@@ -76,7 +76,7 @@ func Dirs(root string, names []string) ([]string, error) {
 	if len(dirs) == 0 {
 		if len(names) > 0 {
 			return nil, fmt.Errorf("no discovered benchmark matches the configured benchmarks (%s); "+
-				"check .autoresearch/config.yaml's benchmarks: list against what `go/ast` finds in %s",
+				"check .autor3search/config.yaml's benchmarks: list against what `go/ast` finds in %s",
 				strings.Join(names, ", "), root)
 		}
 		return nil, fmt.Errorf("no benchmarks discovered in %s", root)
@@ -93,7 +93,7 @@ func Dirs(root string, names []string) ([]string, error) {
 // list of repo-relative package directories to profile — see Dirs — pattern
 // is the benchmark pattern (e.g. "Benchmark.*"), benchtime is passed to
 // `go test -benchtime`, dest is the directory where profile files are
-// written (.autoresearch/profiles or similar), and timeout bounds the
+// written (.autor3search/profiles or similar), and timeout bounds the
 // entire operation.
 //
 // The go tool refuses -cpuprofile/-memprofile against a package pattern
@@ -109,7 +109,7 @@ func Capture(ctx context.Context, root string, dirs []string, pattern, benchtime
 	}
 
 	// Create a temporary directory for the compiled test binaries only.
-	tmpDir, err := os.MkdirTemp("", "autoresearch-profile-*")
+	tmpDir, err := os.MkdirTemp("", "autor3search-profile-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
@@ -190,8 +190,8 @@ func pkgArg(dir string) string {
 
 // pkgDestDir returns the destination directory for one package's profile
 // files when profiling more than one package, nesting them under dest by
-// directory so that, e.g., ".autoresearch/profiles/english/cpu.out" and
-// ".autoresearch/profiles/cpu.out" cannot collide.
+// directory so that, e.g., ".autor3search/profiles/english/cpu.out" and
+// ".autor3search/profiles/cpu.out" cannot collide.
 func pkgDestDir(dest, dir string) string {
 	if dir == "." {
 		return dest

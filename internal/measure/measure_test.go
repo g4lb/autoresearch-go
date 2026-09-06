@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/g4lb/autoresearch-go/internal/bench"
+	"github.com/g4lb/autor3search-go/internal/bench"
 )
 
 func TestInterleaveAlternatesBaseAndCandidate(t *testing.T) {

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/g4lb/autoresearch-go/internal/bench"
-	"github.com/g4lb/autoresearch-go/internal/config"
-	"github.com/g4lb/autoresearch-go/internal/gitx"
-	"github.com/g4lb/autoresearch-go/internal/results"
-	"github.com/g4lb/autoresearch-go/internal/state"
-	"github.com/g4lb/autoresearch-go/internal/verdict"
+	"github.com/g4lb/autor3search-go/internal/bench"
+	"github.com/g4lb/autor3search-go/internal/config"
+	"github.com/g4lb/autor3search-go/internal/gitx"
+	"github.com/g4lb/autor3search-go/internal/results"
+	"github.com/g4lb/autor3search-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/verdict"
 )
 
 // These cover the command layer's own responsibilities — deriving the run
@@ -192,7 +192,7 @@ func TestEvalReportsAllocsHintInHumanAndJSONOutput(t *testing.T) {
 	// The strings.Builder rewrite from internal/pipeline's eval tests:
 	// removes the per-rune string concatenation, which cuts both time and
 	// allocations substantially.
-	const optimized = `// Package demo is a fixture for autoresearch-go's own integration tests.
+	const optimized = `// Package demo is a fixture for autor3search-go's own integration tests.
 package demo
 
 import "strings"
@@ -374,8 +374,8 @@ func TestEvalMissingConfigSuggestsInit(t *testing.T) {
 	dir := copyDemoRepo(t)
 	// Simulate a run branch that exists without ever having gone through
 	// init/baseline (e.g. hand-created, or state corruption) — no
-	// .autoresearch/config.yaml at all.
-	runGit(t, dir, "checkout", "-q", "-b", "autoresearch-go/sep4")
+	// .autor3search/config.yaml at all.
+	runGit(t, dir, "checkout", "-q", "-b", "autor3search-go/sep4")
 
 	var code int
 	stderr := captureStderr(t, func() {
@@ -384,8 +384,8 @@ func TestEvalMissingConfigSuggestsInit(t *testing.T) {
 	if code != exitUsage {
 		t.Fatalf("runEval with no config = %d, want %d", code, exitUsage)
 	}
-	if !strings.Contains(stderr, "autoresearch-go init") {
-		t.Errorf("stderr = %q, want it to suggest `autoresearch-go init` for a genuinely absent config", stderr)
+	if !strings.Contains(stderr, "autor3search-go init") {
+		t.Errorf("stderr = %q, want it to suggest `autor3search-go init` for a genuinely absent config", stderr)
 	}
 }
 
@@ -396,7 +396,7 @@ func TestEvalInvalidConfigDoesNotSuggestInit(t *testing.T) {
 	// told to correct the file in place.
 	dir := copyDemoRepo(t)
 	mustInit(t, dir)
-	runGit(t, dir, "checkout", "-q", "-b", "autoresearch-go/sep4")
+	runGit(t, dir, "checkout", "-q", "-b", "autor3search-go/sep4")
 
 	configPath := filepath.Join(dir, config.Path)
 	cfg, err := config.Load(configPath)
@@ -415,7 +415,7 @@ func TestEvalInvalidConfigDoesNotSuggestInit(t *testing.T) {
 	if code != exitUsage {
 		t.Fatalf("runEval with an invalid config = %d, want %d", code, exitUsage)
 	}
-	if strings.Contains(stderr, "autoresearch-go init") {
+	if strings.Contains(stderr, "autor3search-go init") {
 		t.Errorf("stderr = %q, want no dead-end suggestion to run init (it would refuse without -force)", stderr)
 	}
 	if !strings.Contains(stderr, "count must be at least") {

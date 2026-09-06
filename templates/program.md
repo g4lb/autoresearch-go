@@ -11,15 +11,15 @@ Before starting the loop, do this once:
 
 1. Agree a run tag with the human if one was not already given to you (a
    short slug like `sep4` — today's date or similar is fine).
-2. Confirm `autoresearch-go baseline -tag <tag>` has already been run for
+2. Confirm `autor3search-go baseline -tag <tag>` has already been run for
    this tag. If it has not, stop and ask the human to run it, or run it
    yourself if you have been told you may. `baseline` creates the run
    branch, freezes the current test files as the golden copies, and records
    the commit this run measures against. Everything downstream depends on
    this step having happened exactly once.
 3. Read the repository. Skim the package(s) named in `scope` in
-   `.autoresearch/config.yaml`. Run the declared benchmarks yourself once
-   (`autoresearch-go profile`) so you know what you are starting from before
+   `.autor3search/config.yaml`. Run the declared benchmarks yourself once
+   (`autor3search-go profile`) so you know what you are starting from before
    changing anything.
 
 ## Experimentation
@@ -27,14 +27,14 @@ Before starting the loop, do this once:
 What you MAY do:
 
 - Edit any Go source file that falls under one of the `scope` patterns in
-  `.autoresearch/config.yaml`.
+  `.autor3search/config.yaml`.
 - Add new files inside `scope`, as long as they are not `_test.go` files
   that duplicate or replace existing tests.
 - Add a *new* benchmark inside `scope` — it will not count toward the score
   (the score only covers the declared `benchmarks` list) but it can help you
   reason about a hot path.
 - Run any read-only diagnostic command (`go vet`, `go build -gcflags='-m'`,
-  `autoresearch-go profile`) as often as you like between experiments.
+  `autor3search-go profile`) as often as you like between experiments.
 
 What you MUST NOT do:
 
@@ -47,7 +47,7 @@ What you MUST NOT do:
   what `scope` says. Changing a dependency is a supply-chain decision a
   human makes, not something an unattended loop decides, and a swapped
   dependency can change *what* is measured, not just how fast it runs.
-- Edit `.autoresearch/config.yaml`. It is not covered by the scope gate —
+- Edit `.autor3search/config.yaml`. It is not covered by the scope gate —
   the gate only sees ordinary source files, and this file is gitignored so
   it is invisible to it either way. Instead, its hash is recorded at
   `baseline` time; if it has changed by `eval` time, the run fails with
@@ -63,7 +63,7 @@ What you MUST NOT do:
 
 ## Output format
 
-`autoresearch-go eval` is the only command whose result decides anything.
+`autor3search-go eval` is the only command whose result decides anything.
 It exits with one of four codes, and program.md's loop below branches on
 exactly these:
 
@@ -104,10 +104,10 @@ fields:
   "stop_requested": false,
   "run": {
     "tag": "sep4",
-    "branch": "autoresearch-go/sep4",
+    "branch": "autor3search-go/sep4",
     "baseline_commit": "a3f1c2d",
     "measure_commit": "9b7e410",
-    "worktree": "/Users/you/Library/Caches/autoresearch-go/1a2b3c4d/sep4/baseline-worktree",
+    "worktree": "/Users/you/Library/Caches/autor3search-go/1a2b3c4d/sep4/baseline-worktree",
     "experiment": 5
   }
 }
@@ -158,7 +158,7 @@ tree better than when the run started." Two consequences: (1) after a KEEP,
 running `eval` again with nothing new committed measures your last commit
 against itself and correctly `DISCARD`s, it is not a bug or a fluke; (2) a
 long, honest run's total progress is not any single `score` — it is the
-product of every kept `score`, which is what `autoresearch-go report`'s
+product of every kept `score`, which is what `autor3search-go report`'s
 "cumulative speedup" computes for the human.
 
 `run` is the context for the experiment just recorded: which run tag and
@@ -177,7 +177,7 @@ below.
 The loop does not end on its own. It ends in one of two ways, and only one of
 them is yours to act on.
 
-**A graceful stop.** The human runs `autoresearch-go stop`. That does not
+**A graceful stop.** The human runs `autor3search-go stop`. That does not
 touch you or the experiment you are running; it writes a request that `eval`
 reports back to you as `"stop_requested": true`, alongside a verdict that is
 still fully valid. When you see it:
@@ -186,7 +186,7 @@ still fully valid. When you see it:
    commit, anything else is `git reset --hard HEAD~1`. A stop must never
    leave a commit on the branch that nothing decided on.
 2. Do NOT start another experiment.
-3. Run `autoresearch-go report` and summarize, in a few lines: what you tried,
+3. Run `autor3search-go report` and summarize, in a few lines: what you tried,
    what was kept, and what you would try next if the run resumed.
 4. Exit the loop and say you have stopped because the human asked.
 
@@ -194,7 +194,7 @@ still fully valid. When you see it:
 question from the verdict — it says whether to continue, not what this
 experiment was worth.
 
-**An interrupt.** The human presses Ctrl+C, or runs `autoresearch-go stop
+**An interrupt.** The human presses Ctrl+C, or runs `autor3search-go stop
 -force` because they could not wait for a long benchmark to finish. Either
 one cancels `eval` mid-experiment. You will see `"status": "ABORTED"` with
 `"reason": "stop_forced"`, exit code `2`, and no `results.tsv` row — nothing
@@ -202,7 +202,7 @@ was measured, so nothing was recorded. Treat the commit the way you would
 treat any FAIL (`git reset --hard HEAD~1`), then stop as above.
 
 If the human wants the run to continue after all, they clear the request with
-`autoresearch-go stop -clear`. That is their decision, not something to wait
+`autor3search-go stop -clear`. That is their decision, not something to wait
 for or ask about.
 
 ## Logging
@@ -211,8 +211,8 @@ for or ask about.
 automatically, on every invocation, KEEP or not. You must never create,
 append to, or edit `results.tsv` yourself — any manual write is either
 redundant (the row already exists) or corrupts a file the harness parses
-strictly, which fails the human's morning `autoresearch-go report`, or a
-future `autoresearch-go baseline -force`, on the whole file, not just your
+strictly, which fails the human's morning `autor3search-go report`, or a
+future `autor3search-go baseline -force`, on the whole file, not just your
 line.
 
 The columns the human sees are:
@@ -227,7 +227,7 @@ column that is yours is `description`, and you set it by passing `-desc` to
 `eval`:
 
 ```
-autoresearch-go eval --json -desc "preallocate the map"
+autor3search-go eval --json -desc "preallocate the map"
 ```
 
 Always pass `-desc`, on every invocation, KEEP or not — it is the only
@@ -276,14 +276,14 @@ LOOP FOREVER:
 
 0. Print one context line, so the human watching knows where the run is
    without having to read the JSON:
-   `[exp <n> | <branch> | vs <measure_commit> | stop: autoresearch-go stop]`
+   `[exp <n> | <branch> | vs <measure_commit> | stop: autor3search-go stop]`
    Take the numbers from the previous experiment's `run` object; on the first
-   pass, from `autoresearch-go status`.
+   pass, from `autor3search-go status`.
 1. Check git state: confirm you are on the run branch.
-2. If you have no strong hypothesis, run `autoresearch-go profile` and read the hot spots.
+2. If you have no strong hypothesis, run `autor3search-go profile` and read the hot spots.
 3. Change ONE thing in the in-scope Go source. One idea per experiment.
 4. `git add -A && git commit -m "<idea>"`
-5. `autoresearch-go eval --json -desc "<idea>"` (no redirect — do NOT tee or
+5. `autor3search-go eval --json -desc "<idea>"` (no redirect — do NOT tee or
    send stdout to `run.log`; either floods your context or clobbers the
    transcript, see above). `-desc` is what lands in `results.tsv`'s
    `description` column for this experiment — always pass it.

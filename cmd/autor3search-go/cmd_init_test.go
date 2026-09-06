@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/g4lb/autoresearch-go/internal/config"
+	"github.com/g4lb/autor3search-go/internal/config"
 )
 
 func TestInitWritesConfigAndProgram(t *testing.T) {
@@ -45,7 +45,7 @@ func TestInitAppendsGitignoreWithoutDuplicating(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(b)
-	for _, want := range []string{".autoresearch/*", "!.autoresearch/config.yaml", "results.tsv", "run.log"} {
+	for _, want := range []string{".autor3search/*", "!.autor3search/config.yaml", "results.tsv", "run.log"} {
 		if strings.Count(content, want) != 1 {
 			t.Errorf(".gitignore contains %q %d times, want exactly 1\n%s", want, strings.Count(content, want), content)
 		}
@@ -53,7 +53,7 @@ func TestInitAppendsGitignoreWithoutDuplicating(t *testing.T) {
 }
 
 func TestInitTracksConfigButIgnoresOtherHarnessOutput(t *testing.T) {
-	// .autoresearch/ now holds only config.yaml, which humans own and want
+	// .autor3search/ now holds only config.yaml, which humans own and want
 	// version-controlled — the opposite of everything else the harness
 	// writes there (e.g. Task 16's profile output). init's .gitignore must
 	// reflect exactly that split.
@@ -62,11 +62,11 @@ func TestInitTracksConfigButIgnoresOtherHarnessOutput(t *testing.T) {
 		t.Fatalf("runInit = %d, want %d", code, exitOK)
 	}
 
-	if gitIsIgnored(t, dir, ".autoresearch/config.yaml") {
-		t.Error(".autoresearch/config.yaml is ignored, want it tracked")
+	if gitIsIgnored(t, dir, ".autor3search/config.yaml") {
+		t.Error(".autor3search/config.yaml is ignored, want it tracked")
 	}
-	if !gitIsIgnored(t, dir, ".autoresearch/profiles/cpu.out") {
-		t.Error(".autoresearch/profiles/cpu.out is not ignored, want harness output under .autoresearch/ ignored")
+	if !gitIsIgnored(t, dir, ".autor3search/profiles/cpu.out") {
+		t.Error(".autor3search/profiles/cpu.out is not ignored, want harness output under .autor3search/ ignored")
 	}
 }
 

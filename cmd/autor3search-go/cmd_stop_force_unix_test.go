@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/g4lb/autoresearch-go/internal/state"
+	"github.com/g4lb/autor3search-go/internal/state"
 )
 
 // The stand-in eval runs as a re-exec of this test binary, so it holds the
@@ -23,8 +23,8 @@ import (
 // the test process would keep the lock held after the stand-in died and test
 // nothing.
 const (
-	helperEnv       = "AUTORESEARCH_STOP_HELPER_STATEDIR"
-	helperIgnoreEnv = "AUTORESEARCH_STOP_HELPER_IGNORE_TERM"
+	helperEnv       = "AUTOR3SEARCH_STOP_HELPER_STATEDIR"
+	helperIgnoreEnv = "AUTOR3SEARCH_STOP_HELPER_IGNORE_TERM"
 )
 
 // TestStopForceStandInEval is not a test. It is the child process the two

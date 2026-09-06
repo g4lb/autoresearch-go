@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/g4lb/autoresearch-go/internal/bench"
+	"github.com/g4lb/autor3search-go/internal/bench"
 )
 
 // Status is the terminal outcome of one experiment.

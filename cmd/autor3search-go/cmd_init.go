@@ -10,55 +10,55 @@ import (
 	"strings"
 	"time"
 
-	"github.com/g4lb/autoresearch-go/internal/config"
-	"github.com/g4lb/autoresearch-go/internal/discover"
-	"github.com/g4lb/autoresearch-go/internal/gitx"
-	"github.com/g4lb/autoresearch-go/templates"
+	"github.com/g4lb/autor3search-go/internal/config"
+	"github.com/g4lb/autor3search-go/internal/discover"
+	"github.com/g4lb/autor3search-go/internal/gitx"
+	"github.com/g4lb/autor3search-go/templates"
 )
 
-// gitignoreEntries are the lines init adds to .gitignore. .autoresearch/*
+// gitignoreEntries are the lines init adds to .gitignore. .autor3search/*
 // ignores everything the harness itself writes under that directory (e.g.
-// Task 16's profile output under .autoresearch/profiles/), while the
-// negation re-includes config.yaml — the one file under .autoresearch/ that
+// Task 16's profile output under .autor3search/profiles/), while the
+// negation re-includes config.yaml — the one file under .autor3search/ that
 // is meant to be version-controlled, since humans own it and want their
 // edits tracked. Note the "/*": git cannot re-include a file whose parent
-// directory is itself excluded, so ".autoresearch/" followed by a negation
+// directory is itself excluded, so ".autor3search/" followed by a negation
 // would silently fail to un-ignore config.yaml; excluding the directory's
 // contents and re-including the one file inside it is the form that works.
-var gitignoreEntries = []string{".autoresearch/*", "!.autoresearch/config.yaml", "results.tsv", "run.log"}
+var gitignoreEntries = []string{".autor3search/*", "!.autor3search/config.yaml", "results.tsv", "run.log"}
 
 // runInit scans a repository, discovers its benchmarks, and writes
-// `.autoresearch/config.yaml` and `program.md`. It is the entry point every
+// `.autor3search/config.yaml` and `program.md`. It is the entry point every
 // other command assumes has already run.
 func runInit(args []string) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	dir := fs.String("C", ".", "repository root (or a directory inside it)")
-	force := fs.Bool("force", false, "overwrite an existing .autoresearch/config.yaml")
+	force := fs.Bool("force", false, "overwrite an existing .autor3search/config.yaml")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
 
 	root, err := gitx.Root(*dir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go init: %s is not inside a git repository: %v\n", *dir, err)
-		fmt.Fprintln(os.Stderr, "autoresearch-go needs git to keep or discard each experiment; run `git init` first.")
+		fmt.Fprintf(os.Stderr, "autor3search-go init: %s is not inside a git repository: %v\n", *dir, err)
+		fmt.Fprintln(os.Stderr, "autor3search-go needs git to keep or discard each experiment; run `git init` first.")
 		return exitUsage
 	}
 
 	configPath := filepath.Join(root, config.Path)
 	if _, statErr := os.Stat(configPath); statErr == nil && !*force {
-		fmt.Fprintf(os.Stderr, "autoresearch-go init: %s already exists; pass -force to overwrite\n", configPath)
+		fmt.Fprintf(os.Stderr, "autor3search-go init: %s already exists; pass -force to overwrite\n", configPath)
 		return exitUsage
 	}
 
 	benches, err := discover.Benchmarks(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go init: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go init: %v\n", err)
 		return exitUsage
 	}
 	if len(benches) == 0 {
-		fmt.Fprintln(os.Stderr, "autoresearch-go init: no benchmarks found. autoresearch-go optimizes what it "+
+		fmt.Fprintln(os.Stderr, "autor3search-go init: no benchmarks found. autor3search-go optimizes what it "+
 			"can measure — add a Benchmark function first, or see the README section \"Repos with no benchmarks\".")
 		return exitUsage
 	}
@@ -68,22 +68,22 @@ func runInit(args []string) int {
 	cfg.Benchmarks = names
 
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go init: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go init: %v\n", err)
 		return exitUsage
 	}
 	if err := os.WriteFile(configPath, renderConfig(cfg), 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go init: write config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go init: write config: %v\n", err)
 		return exitUsage
 	}
 
 	programPath := filepath.Join(root, "program.md")
 	if err := os.WriteFile(programPath, templates.ProgramMD(), 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go init: write program.md: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go init: write program.md: %v\n", err)
 		return exitUsage
 	}
 
 	if err := ensureGitignore(root, gitignoreEntries); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go init: update .gitignore: %v\n", err)
+		fmt.Fprintf(os.Stderr, "autor3search-go init: update .gitignore: %v\n", err)
 		return exitUsage
 	}
 
@@ -136,13 +136,13 @@ func ensureGitignore(root string, entries []string) error {
 // defaults for anything an editing human later removes.
 func renderConfig(cfg config.Config) []byte {
 	var b strings.Builder
-	b.WriteString("# autoresearch-go run configuration.\n")
-	b.WriteString("# Generated by `autoresearch-go init`. Safe to hand-edit; comments are not\n")
+	b.WriteString("# autor3search-go run configuration.\n")
+	b.WriteString("# Generated by `autor3search-go init`. Safe to hand-edit; comments are not\n")
 	b.WriteString("# preserved by future automated writes, but init only writes this file once\n")
 	b.WriteString("# (or with -force).\n\n")
 
 	b.WriteString("# Benchmarks declares exactly which benchmark functions count toward the\n")
-	b.WriteString("# score. autoresearch-go discovered these when you ran `init`; edit this\n")
+	b.WriteString("# score. autor3search-go discovered these when you ran `init`; edit this\n")
 	b.WriteString("# list by hand to narrow or widen what gets measured. Empty means every\n")
 	b.WriteString("# discovered benchmark.\n")
 	writeYAMLList(&b, "benchmarks", cfg.Benchmarks)
@@ -222,7 +222,7 @@ func writeYAMLList(b *strings.Builder, key string, items []string) {
 // printInitSummary reports what init found and wrote, and the exact next
 // commands to run.
 func printInitSummary(benchmarks []string, configPath, programPath string) {
-	fmt.Printf("autoresearch-go init: found %d benchmark(s):\n", len(benchmarks))
+	fmt.Printf("autor3search-go init: found %d benchmark(s):\n", len(benchmarks))
 	for _, n := range benchmarks {
 		fmt.Printf("  - %s\n", n)
 	}
@@ -230,9 +230,9 @@ func printInitSummary(benchmarks []string, configPath, programPath string) {
 	fmt.Printf("  %s\n", configPath)
 	fmt.Printf("  %s\n", programPath)
 	fmt.Println("\nnext:")
-	fmt.Println("  git add -A && git commit -m \"autoresearch-go init\"")
-	fmt.Println("  autoresearch-go doctor")
-	fmt.Printf("  autoresearch-go baseline -tag %s\n", defaultTag())
+	fmt.Println("  git add -A && git commit -m \"autor3search-go init\"")
+	fmt.Println("  autor3search-go doctor")
+	fmt.Printf("  autor3search-go baseline -tag %s\n", defaultTag())
 }
 
 // defaultTag suggests a run tag from today's date, e.g. "sep4".

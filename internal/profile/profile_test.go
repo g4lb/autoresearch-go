@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/g4lb/autoresearch-go/internal/runner"
+	"github.com/g4lb/autor3search-go/internal/runner"
 )
 
 // TestCaptureSinglePackage covers the common case: every declared benchmark

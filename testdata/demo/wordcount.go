@@ -1,4 +1,4 @@
-// Package demo is a fixture for autoresearch-go's own integration tests.
+// Package demo is a fixture for autor3search-go's own integration tests.
 // The implementation is intentionally suboptimal.
 package demo
 
