@@ -637,3 +637,50 @@ func TestEvalAbortedByAStopReportsAbortedAndRecordsNothing(t *testing.T) {
 		t.Errorf("aborted eval appended %d results.tsv row(s), want 0", len(rows))
 	}
 }
+
+// TestGateLinesAlignInHumanOutput guards the column the gate results are
+// printed in. It was a hard-coded width that the longest label ("checking
+// baseline worktree integrity", 36 characters) overflowed, so that one row's
+// "ok" sat out past every other. Deriving the width from the labels
+// themselves means a future gate with a longer name cannot break it again.
+func TestGateLinesAlignInHumanOutput(t *testing.T) {
+	res := verdict.Result{
+		Status: verdict.StatusDiscard, Reason: verdict.ReasonNoImprovement, Score: 0.99,
+	}
+	deltas := []bench.Delta{{
+		Name: "BenchmarkCountWords", Unit: bench.UnitTime, BaseCenter: 100, CandCenter: 99,
+		Ratio: 0.99, PctChange: -1, P: 0.4, Alpha: 0.05, NBase: 5, NCand: 5,
+	}}
+	cfg := config.Default()
+	out := captureStdout(t, func() { printHuman(res, deltas, nil, cfg, runCtx{}) })
+
+	stages := gateStages(cfg)
+	column := -1
+	for _, s := range stages {
+		line := gateLineFor(t, out, s.label)
+		at := strings.Index(line, " ok")
+		if at < 0 {
+			t.Fatalf("gate line %q has no result token", line)
+		}
+		if column == -1 {
+			column = at
+			continue
+		}
+		if at != column {
+			t.Errorf("gate %q prints its result at column %d, others at %d:\n%s",
+				s.label, at, column, out)
+		}
+	}
+}
+
+// gateLineFor finds the output line reporting the named gate.
+func gateLineFor(t *testing.T, out, label string) string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, label) {
+			return line
+		}
+	}
+	t.Fatalf("no line for gate %q in:\n%s", label, out)
+	return ""
+}

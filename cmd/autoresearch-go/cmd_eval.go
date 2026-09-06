@@ -347,6 +347,20 @@ type gateStage struct {
 	reason verdict.Reason
 }
 
+// gateColumn is the width the gate labels are padded to: the longest label
+// plus a space. Derived rather than hard-coded, because a hard-coded width
+// is silently wrong the moment a gate is added or renamed past it — which is
+// exactly what happened to "checking baseline worktree integrity".
+func gateColumn(stages []gateStage) int {
+	widest := 0
+	for _, s := range stages {
+		if len(s.label) > widest {
+			widest = len(s.label)
+		}
+	}
+	return widest + 1
+}
+
 func gateStages(cfg config.Config) []gateStage {
 	testLabel := "go test ./..."
 	if cfg.Race {
@@ -370,6 +384,7 @@ func gateStages(cfg config.Config) []gateStage {
 func printHuman(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta, cfg config.Config, rc runCtx) {
 	printRunHeader(rc)
 	stages := gateStages(cfg)
+	column := gateColumn(stages)
 	failedAt := -1
 	for i, s := range stages {
 		if s.reason == res.Reason {
@@ -389,10 +404,10 @@ func printHuman(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta, cfg 
 	if failedAt >= 0 {
 		for i, s := range stages {
 			if i < failedAt {
-				fmt.Printf("%-26s ok\n", s.label)
+				fmt.Printf("%-*s ok\n", column, s.label)
 				continue
 			}
-			fmt.Printf("%-26s FAILED\n", s.label)
+			fmt.Printf("%-*s FAILED\n", column, s.label)
 			fmt.Println(res.Message)
 			break
 		}
@@ -403,7 +418,7 @@ func printHuman(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta, cfg 
 
 	// Every gate passed, so the candidate was measured against baseline.
 	for _, s := range stages {
-		fmt.Printf("%-26s ok\n", s.label)
+		fmt.Printf("%-*s ok\n", column, s.label)
 	}
 	fmt.Printf("bench x%d vs baseline x%d\n\n", cfg.Count, cfg.Count)
 
