@@ -174,8 +174,14 @@ func readPIDFile(path string) (pid int, present bool, err error) {
 	if err != nil {
 		return 0, false, fmt.Errorf("read %s: %q is not a pid", path, text)
 	}
-	if pid <= 0 {
-		return 0, false, fmt.Errorf("read %s: pid %d is not a valid process id", path, pid)
+	// pid 1 is rejected alongside the impossible ones. `stop -force`
+	// escalates by signalling the pid's process GROUP, and kill(2) reads a
+	// target of -1 as every process the caller may signal rather than as
+	// one group — so a pid file holding "1" would turn a wedged experiment
+	// into a session-wide kill. See groupSignalTarget in the command layer,
+	// which refuses it again at the syscall.
+	if pid <= 1 {
+		return 0, false, fmt.Errorf("read %s: pid %d is not a process this command will signal", path, pid)
 	}
 	return pid, true, nil
 }
