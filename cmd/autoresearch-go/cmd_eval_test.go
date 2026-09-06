@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -437,7 +438,7 @@ func TestHumanOutputPrintsMeasurementWarnings(t *testing.T) {
 		Ratio: 0.99, PctChange: -1, P: 0.4, Alpha: 0.05, NBase: 5, NCand: 5,
 	}}
 	cfg := config.Default()
-	out := captureStdout(t, func() { printHuman(res, deltas, nil, cfg) })
+	out := captureStdout(t, func() { printHuman(res, deltas, nil, cfg, runCtx{}) })
 
 	if !strings.Contains(out, "need >= 6 samples") {
 		t.Errorf("stdout = %q, want the measurement warning printed", out)
@@ -458,7 +459,7 @@ func TestJSONOutputIncludesMeasurementWarnings(t *testing.T) {
 		Status: verdict.StatusDiscard, Reason: verdict.ReasonNoImprovement, Score: 0.99,
 		Warnings: []string{"need >= 6 samples for confidence interval at level 0.95"},
 	}
-	out := captureStdout(t, func() { printJSON(res, nil, nil) })
+	out := captureStdout(t, func() { printJSON(res, nil, nil, runCtx{}) })
 
 	var got struct {
 		Warnings []string `json:"warnings"`
@@ -468,5 +469,171 @@ func TestJSONOutputIncludesMeasurementWarnings(t *testing.T) {
 	}
 	if len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0], "need >= 6 samples") {
 		t.Errorf("warnings = %v, want the measurement warning", got.Warnings)
+	}
+}
+
+// dirtyGoMod makes the next eval fail its very first gate, so these tests
+// pay for a git diff rather than a full build/vet/test/bench cycle.
+func dirtyGoMod(t *testing.T, dir string) {
+	t.Helper()
+	goMod := filepath.Join(dir, "go.mod")
+	b, err := os.ReadFile(goMod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(goMod, append(b, []byte("\n// touched\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-q", "-m", "touch go.mod")
+}
+
+// evalJSON runs one eval and decodes its JSON verdict.
+func evalJSON(t *testing.T, dir string) (map[string]any, int) {
+	t.Helper()
+	var code int
+	stdout := captureStdout(t, func() {
+		code = runEval([]string{"-C", dir, "-json", "-desc", "test"})
+	})
+	var got map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("decode eval JSON: %v\n%s", err, stdout)
+	}
+	return got, code
+}
+
+func TestEvalJSONCarriesTheRunContext(t *testing.T) {
+	// The loop only ever sees `eval --json`, so the run context has to
+	// travel in the JSON or the agent cannot report it to the human.
+	dir, stateDir, _ := baselinedRepo(t)
+	dirtyGoMod(t, dir)
+
+	got, _ := evalJSON(t, dir)
+	run, ok := got["run"].(map[string]any)
+	if !ok {
+		t.Fatalf("eval JSON has no run context: %v", got)
+	}
+	if run["tag"] != "sep4" {
+		t.Errorf("run.tag = %v, want sep4", run["tag"])
+	}
+	if run["branch"] != branchPrefix+"sep4" {
+		t.Errorf("run.branch = %v, want %s", run["branch"], branchPrefix+"sep4")
+	}
+	if want := filepath.Join(stateDir, state.WorktreeName); run["worktree"] != want {
+		t.Errorf("run.worktree = %v, want %s", run["worktree"], want)
+	}
+	if run["experiment"] != float64(1) {
+		t.Errorf("run.experiment = %v, want 1 for the first experiment", run["experiment"])
+	}
+	if run["baseline_commit"] == "" || run["measure_commit"] == "" {
+		t.Errorf("run context is missing its commits: %v", run)
+	}
+}
+
+func TestEvalJSONReportsNoStopByDefault(t *testing.T) {
+	dir, _, _ := baselinedRepo(t)
+	dirtyGoMod(t, dir)
+
+	got, _ := evalJSON(t, dir)
+	if got["stop_requested"] != false {
+		t.Errorf("stop_requested = %v, want false", got["stop_requested"])
+	}
+}
+
+func TestEvalJSONReportsAPendingStop(t *testing.T) {
+	dir, _, _ := baselinedRepo(t)
+	dirtyGoMod(t, dir)
+	captureStdout(t, func() { runStop([]string{"-C", dir}) })
+
+	got, _ := evalJSON(t, dir)
+	if got["stop_requested"] != true {
+		t.Errorf("stop_requested = %v, want true", got["stop_requested"])
+	}
+}
+
+func TestEvalExitCodeIsUnchangedByAPendingStop(t *testing.T) {
+	// A pending stop must never mask the verdict: the agent still has to
+	// apply the KEEP or DISCARD for the experiment it just finished.
+	dirA, _, _ := baselinedRepo(t)
+	dirtyGoMod(t, dirA)
+	_, want := evalJSON(t, dirA)
+
+	dirB, _, _ := baselinedRepo(t)
+	dirtyGoMod(t, dirB)
+	captureStdout(t, func() { runStop([]string{"-C", dirB}) })
+	got, code := evalJSON(t, dirB)
+
+	if code != want {
+		t.Errorf("exit code with a pending stop = %d, want %d (unchanged)", code, want)
+	}
+	if got["stop_requested"] != true {
+		t.Fatalf("test did not exercise a pending stop: %v", got)
+	}
+}
+
+func TestEvalReleasesItsClaimWhenItFinishes(t *testing.T) {
+	dir, stateDir, _ := baselinedRepo(t)
+	dirtyGoMod(t, dir)
+
+	evalJSON(t, dir)
+	if _, running, _ := state.EvalRunning(stateDir); running {
+		t.Error("eval still claims the run after finishing")
+	}
+}
+
+func TestEvalRefusesToRunConcurrentlyWithAnotherEval(t *testing.T) {
+	// Two evals on one run would fight over the same pinned worktree.
+	dir, stateDir, _ := baselinedRepo(t)
+	release, err := state.ClaimEval(stateDir, os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	var code int
+	stderr := captureStderr(t, func() {
+		code = runEval([]string{"-C", dir, "-json", "-desc", "test"})
+	})
+	if code != exitUsage {
+		t.Fatalf("concurrent runEval = %d, want %d", code, exitUsage)
+	}
+	if !strings.Contains(stderr, "already running") {
+		t.Errorf("stderr = %q, want it to name the running eval", stderr)
+	}
+}
+
+func TestEvalAbortedByAStopReportsAbortedAndRecordsNothing(t *testing.T) {
+	// `stop -force` cancels eval's context mid-experiment. Nothing was
+	// measured, so nothing may be written to results.tsv — a row there
+	// would be an experiment the human never ran.
+	dir, _, _ := baselinedRepo(t)
+	dirtyGoMod(t, dir)
+	resultsPath := filepath.Join(dir, results.Path)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	var code int
+	stdout := captureStdout(t, func() {
+		code = runEvalCtx(ctx, []string{"-C", dir, "-json", "-desc", "aborted"})
+	})
+	if code != exitFail {
+		t.Fatalf("aborted runEval = %d, want %d (agent treats it as FAIL and resets)", code, exitFail)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("decode aborted eval JSON: %v\n%s", err, stdout)
+	}
+	if got["status"] != "ABORTED" {
+		t.Errorf("status = %v, want ABORTED", got["status"])
+	}
+	if got["stop_requested"] != true {
+		t.Errorf("stop_requested = %v, want true — an abort is a stop", got["stop_requested"])
+	}
+
+	rows, err := results.Load(resultsPath)
+	if err == nil && len(rows) != 0 {
+		t.Errorf("aborted eval appended %d results.tsv row(s), want 0", len(rows))
 	}
 }

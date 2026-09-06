@@ -45,11 +45,17 @@ Then:
 Rules for the whole run:
 - Never edit program.md, .autoresearch/config.yaml, results.tsv, or anything
   the harness writes. They are not yours.
-- Never pass -force to any autoresearch-go command.
+- Never pass -force to any autoresearch-go command. (I may run
+  `autoresearch-go stop -force` myself; that one is mine, not yours.)
 - One idea per experiment. Commit before each eval.
 - KEEP means the commit stays. Anything else means git reset --hard HEAD~1.
+- Print one context line before each experiment, so I can see where you are:
+  [exp <n> | <branch> | vs <measure_commit> | stop: autoresearch-go stop]
 
-Run the loop until I stop you.
+Run the loop until I stop you. I stop you by running `autoresearch-go stop` in
+my own terminal — you will see it as "stop_requested": true in a verdict.
+When you do: apply that verdict, do not start another experiment, run
+`autoresearch-go report`, summarize what you tried, and exit the loop.
 ```
 
 That's the whole handoff. The agent installs the tool, sets the run up, and then
@@ -117,6 +123,56 @@ Read program.md and start the optimization loop.
 It runs until you stop it. Each experiment is one commit, one verdict, one row in
 `results.tsv`.
 
+## Watching a run, and stopping it
+
+The agent's loop calls `eval --json`, which by contract prints one JSON object
+and nothing else — so there is no human-readable stream to watch. Ask the run
+where it is instead, from any terminal, any branch, at any time:
+
+```
+$ autoresearch-go status
+run tag        sep4
+branch         autoresearch-go/sep4  (checked out)
+baseline       a3f1c2d  (run started here)
+measuring vs   9b7e410  (advanced past the baseline by earlier KEEPs)
+worktree       ~/Library/Caches/autoresearch-go/1a2b3c4d/sep4/baseline-worktree
+experiments    4 run  (1 keep, 2 discard, 1 fail, 0 crash)  — next is #5
+eval           running (pid 48213) — an experiment is being measured
+stop           not requested
+
+to stop after the current experiment:  autoresearch-go stop
+to stop now, abandoning it:            autoresearch-go stop -force
+```
+
+`status` never writes anything: checking on a run cannot change it.
+
+There are three ways to stop, and they differ in what happens to the
+experiment currently in flight.
+
+**`autoresearch-go stop` — graceful.** Writes a request the agent reads at its
+next verdict. The experiment under way finishes and is scored, its KEEP or
+DISCARD is applied, and only then does the loop exit with a summary. Nothing
+is thrown away. This is the one to use. `autoresearch-go stop -clear` cancels
+it if you change your mind before the agent notices.
+
+**`autoresearch-go stop -force` — immediate.** For when you cannot wait out a
+long benchmark. It writes the same request, then signals the running `eval` to
+abandon the experiment. The experiment is lost (no `results.tsv` row is
+written, because nothing was measured); every kept commit before it is
+untouched. It then tells you what state the repository is in, including the
+commit the agent had made for the abandoned experiment and how to drop it. It
+does not drop anything for you.
+
+**Ctrl+C.** Interrupting the agent works too. `eval` handles the signal rather
+than dying under it, which matters more than it sounds: `go test` runs the
+compiled benchmark as a grandchild process, so an `eval` killed without a
+chance to clean up would leave that benchmark running — burning CPU and
+corrupting every later measurement on the machine.
+
+Whichever you use, the work is on the run branch `autoresearch-go/<tag>` and
+`autoresearch-go report` summarizes it. Resuming later needs nothing special:
+clear any pending stop and point the agent back at `program.md`.
+
 ## Commands
 
 | Command | What it does |
@@ -126,6 +182,8 @@ It runs until you stop it. Each experiment is one commit, one verdict, one row i
 | `baseline -tag <tag>` | Creates the run branch `autoresearch-go/<tag>`, freezes every in-scope `_test.go` file, and pins a detached worktree at the baseline commit. Refuses a dirty tree and a reused tag. |
 | `profile` | Runs the declared benchmarks under Go's CPU and memory profilers and prints the top hot spots — real `pprof` data on where time and allocations actually go, rather than an agent guessing from reading source. Profiles only the package(s) that declare the benchmarks in scope (the go tool refuses `-cpuprofile`/`-memprofile` against `./...` once more than one package matches). When they're all in one package — the common case — writes `.autoresearch/profiles/{cpu,mem}.out`, openable with `go tool pprof -http=: <file>`; when benchmarks span multiple packages, profiles each in turn and writes `.autoresearch/profiles/<package>/{cpu,mem}.out`, with output grouped and labelled by package. |
 | `eval` | Runs one experiment: gates (scope, config integrity, restore, build, vet, test), measures the candidate against the pinned baseline worktree, scores it, appends a `results.tsv` row, exits `0`/`1`/`2`/`3` for KEEP/DISCARD/FAIL/CRASH, and on `KEEP` re-points the pinned worktree at the candidate's commit so the next `eval` measures against it (see [Scoring](#scoring)). |
+| `status` | Prints where a run is: run branch and whether it is checked out, the frozen baseline commit and the advancing measurement commit, the pinned worktree, how many experiments have run and with what verdicts, whether an `eval` is in flight, and whether a stop is pending. Read-only. Accepts `-tag <tag>` so it works from any branch. |
+| `stop` | Asks the agent to end the run after the experiment it is running: writes a request `eval` reports back as `stop_requested`. `-clear` cancels a pending request; `-force` additionally signals the running `eval` to abandon the current experiment and reports what state that leaves the repository in. Accepts `-tag <tag>`. |
 | `report` | Summarizes `results.tsv`: counts by status, the cumulative speedup as the product of every kept experiment's score, and the largest individual wins. |
 
 Every command accepts `-C <dir>` to run against a repository other than the current

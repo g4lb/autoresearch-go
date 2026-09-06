@@ -76,7 +76,9 @@ exactly these:
 
 Any status the harness cannot classify is reported as exit code `2`
 (FAIL) rather than a silent success — treat an unrecognized `--json` status
-the same way you would treat FAIL.
+the same way you would treat FAIL. `ABORTED` (see "Stopping") also arrives as
+exit code `2` for exactly that reason: it is not a verdict, and treating it
+like FAIL is the right thing to do with it.
 
 **A `KEEP` requires a real, not just a technically significant, improvement.**
 `eval` only returns `KEEP` when `score` clears `1 - min_effect_pct/100` (default
@@ -98,14 +100,25 @@ fields:
   "score": 0.9123,
   "message": "score 0.9123 (-8.77%)",
   "regressions": [],
-  "warnings": []
+  "warnings": [],
+  "stop_requested": false,
+  "run": {
+    "tag": "sep4",
+    "branch": "autoresearch-go/sep4",
+    "baseline_commit": "a3f1c2d",
+    "measure_commit": "9b7e410",
+    "worktree": "/Users/you/Library/Caches/autoresearch-go/1a2b3c4d/sep4/baseline-worktree",
+    "experiment": 5
+  }
 }
 ```
 
-`status` is one of `KEEP`, `DISCARD`, `FAIL`, `CRASH`. `reason` is a stable,
-machine-readable code (e.g. `improved`, `no_significant_improvement`,
-`improvement_below_min_effect`, `guard_regression`, `scope_violation`,
-`new_test_file`, `build_failed`, `vet_failed`, `tests_failed`, `timeout`).
+`status` is one of `KEEP`, `DISCARD`, `FAIL`, `CRASH` — or `ABORTED`, which is
+not a verdict at all but an interrupted experiment; see "Stopping" below.
+`reason` is a stable, machine-readable code (e.g. `improved`,
+`no_significant_improvement`, `improvement_below_min_effect`,
+`guard_regression`, `scope_violation`, `new_test_file`, `build_failed`,
+`vet_failed`, `tests_failed`, `timeout`, `stop_forced`).
 
 Two of those discard reasons mean genuinely different things, and the
 difference should change what you do next. `no_significant_improvement`
@@ -147,6 +160,50 @@ against itself and correctly `DISCARD`s, it is not a bug or a fluke; (2) a
 long, honest run's total progress is not any single `score` — it is the
 product of every kept `score`, which is what `autoresearch-go report`'s
 "cumulative speedup" computes for the human.
+
+`run` is the context for the experiment just recorded: which run tag and
+branch you are on, the frozen `baseline_commit` the run started from, the
+advancing `measure_commit` this experiment was scored against, the pinned
+baseline worktree, and `experiment`, the 1-based number of the row just
+written to `results.tsv`. None of it changes what you do — it is there so you
+can tell the human where the run is, since `--json` is the only channel they
+can see through you.
+
+`stop_requested` is the one field that does change what you do. See "Stopping"
+below.
+
+## Stopping
+
+The loop does not end on its own. It ends in one of two ways, and only one of
+them is yours to act on.
+
+**A graceful stop.** The human runs `autoresearch-go stop`. That does not
+touch you or the experiment you are running; it writes a request that `eval`
+reports back to you as `"stop_requested": true`, alongside a verdict that is
+still fully valid. When you see it:
+
+1. Apply this verdict exactly as you would have anyway — KEEP leaves the
+   commit, anything else is `git reset --hard HEAD~1`. A stop must never
+   leave a commit on the branch that nothing decided on.
+2. Do NOT start another experiment.
+3. Run `autoresearch-go report` and summarize, in a few lines: what you tried,
+   what was kept, and what you would try next if the run resumed.
+4. Exit the loop and say you have stopped because the human asked.
+
+`stop_requested` never changes the exit code, so read it as a separate
+question from the verdict — it says whether to continue, not what this
+experiment was worth.
+
+**An interrupt.** The human presses Ctrl+C, or runs `autoresearch-go stop
+-force` because they could not wait for a long benchmark to finish. Either
+one cancels `eval` mid-experiment. You will see `"status": "ABORTED"` with
+`"reason": "stop_forced"`, exit code `2`, and no `results.tsv` row — nothing
+was measured, so nothing was recorded. Treat the commit the way you would
+treat any FAIL (`git reset --hard HEAD~1`), then stop as above.
+
+If the human wants the run to continue after all, they clear the request with
+`autoresearch-go stop -clear`. That is their decision, not something to wait
+for or ask about.
 
 ## Logging
 
@@ -217,6 +274,11 @@ stdout; open `run.log` only to read it, never to write to it.
 
 LOOP FOREVER:
 
+0. Print one context line, so the human watching knows where the run is
+   without having to read the JSON:
+   `[exp <n> | <branch> | vs <measure_commit> | stop: autoresearch-go stop]`
+   Take the numbers from the previous experiment's `run` object; on the first
+   pass, from `autoresearch-go status`.
 1. Check git state: confirm you are on the run branch.
 2. If you have no strong hypothesis, run `autoresearch-go profile` and read the hot spots.
 3. Change ONE thing in the in-scope Go source. One idea per experiment.
@@ -232,9 +294,17 @@ LOOP FOREVER:
    experiment is measured against what you just kept, not against where
    the run started.
    Anything else -> `git reset --hard HEAD~1`
-8. Go to 1.
+8. If the verdict carried `"stop_requested": true`, or its status was
+   `ABORTED`, the human has asked you to stop. Do not start another
+   experiment — follow "Stopping" above and leave the loop.
+9. Go to 0.
 
-**NEVER STOP**: Do not pause to ask whether to continue. The human may be
-asleep. You are autonomous. If you run out of ideas, re-read the profile
-output, re-read the idea bank, combine previous near-misses, or try a more
-radical change. The loop runs until you are interrupted.
+**NEVER STOP ON YOUR OWN**: Do not pause to ask whether to continue. The
+human may be asleep. You are autonomous. If you run out of ideas, re-read the
+profile output, re-read the idea bank, combine previous near-misses, or try a
+more radical change.
+
+Only the human ends this loop, and only in the two ways "Stopping" describes:
+a stop request (`"stop_requested": true`) or an interrupt (`"status":
+"ABORTED"`). Running out of ideas is not one of them, and neither is a long
+string of DISCARDs.

@@ -165,3 +165,40 @@ func TestWorktreeLifecycle(t *testing.T) {
 		t.Errorf("worktree still present after removal")
 	}
 }
+
+func TestHeadSubjectReturnsTheCommitMessageSubject(t *testing.T) {
+	dir := repo(t)
+	subject, err := HeadSubject(dir)
+	if err != nil {
+		t.Fatalf("HeadSubject: %v", err)
+	}
+	if subject != "initial" {
+		t.Errorf("HeadSubject = %q, want %q", subject, "initial")
+	}
+}
+
+func TestHeadSubjectReturnsOnlyTheFirstLine(t *testing.T) {
+	// Commit messages have bodies; a one-line status report must not print
+	// a whole message with its trailers.
+	dir := repo(t)
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "-m", "preallocate the map\n\nA longer explanation.\n")
+
+	subject, err := HeadSubject(dir)
+	if err != nil {
+		t.Fatalf("HeadSubject: %v", err)
+	}
+	if subject != "preallocate the map" {
+		t.Errorf("HeadSubject = %q, want %q", subject, "preallocate the map")
+	}
+}

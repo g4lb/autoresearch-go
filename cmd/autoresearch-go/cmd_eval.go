@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/g4lb/autoresearch-go/internal/bench"
 	"github.com/g4lb/autoresearch-go/internal/config"
@@ -21,14 +23,30 @@ import (
 )
 
 // branchPrefix is the run-branch naming convention `baseline` establishes.
-// eval strips it to recover the run tag, which is how it finds the run's
-// state.StateDir (frozen tests, baseline record, pinned worktree).
+// resolveRunRef strips it to recover the run tag, which is how eval, status
+// and stop all find a run's state.StateDir (frozen tests, baseline record,
+// pinned worktree).
 const branchPrefix = "autoresearch-go/"
 
-// runEval resolves the run's state from the current git branch, runs one
-// pipeline.Eval, prints the result, appends a results.tsv row, and exits
-// with verdict.Result.ExitCode() — the code program.md branches on.
+// runEval runs one experiment, wiring interrupt handling around it.
+//
+// The context is cancellable by SIGINT and SIGTERM, and that is load-bearing
+// rather than tidy-up: internal/runner puts every `go test` in its own
+// process group and kills the GROUP when the context is cancelled, because
+// the compiled benchmark binary runs as a grandchild. Without a signal-aware
+// context here, a Ctrl+C at the terminal — or `stop -force` — would kill
+// eval and orphan that benchmark binary, which then keeps burning CPU and
+// corrupts every later measurement on the machine.
 func runEval(args []string) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runEvalCtx(ctx, args)
+}
+
+// runEvalCtx resolves the run's state from the current git branch, runs one
+// pipeline.Eval, prints the result, appends a results.tsv row, and returns
+// verdict.Result.ExitCode() — the code program.md branches on.
+func runEvalCtx(ctx context.Context, args []string) int {
 	fs := flag.NewFlagSet("eval", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	dir := fs.String("C", ".", "repository root (or a directory inside it)")
@@ -39,42 +57,14 @@ func runEval(args []string) int {
 		return exitUsage
 	}
 
-	root, err := gitx.Root(*dir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %s is not inside a git repository: %v\n", *dir, err)
-		return exitUsage
+	// No -tag here, unlike `status` and `stop`: eval must run on the same
+	// run branch baseline created, so there is no way to point it at the
+	// wrong run by mistake.
+	ref, code := resolveRunRef("eval", *dir, "")
+	if code != exitOK {
+		return code
 	}
-
-	// The run tag comes from the checked-out branch, not a flag: eval must
-	// run on the same run branch baseline created, so there is no way to
-	// point it at the wrong tag by mistake.
-	branch, err := gitx.CurrentBranch(root)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", err)
-		return exitUsage
-	}
-	if !strings.HasPrefix(branch, branchPrefix) {
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: current branch %q is not a run branch "+
-			"(expected %s<tag>). Check out your run branch first, e.g. "+
-			"`git checkout %ssep4`, or run `autoresearch-go baseline` if you have not started a run yet.\n",
-			branch, branchPrefix, branchPrefix)
-		return exitUsage
-	}
-	tag := strings.TrimPrefix(branch, branchPrefix)
-	// tag is derived from a branch name git itself already validated, so a
-	// traversal tag cannot reach here in practice. Check anyway: this is the
-	// same trust boundary FIX 1 hardens in `baseline`, and validating costs
-	// nothing (state.StateDir enforces it internally regardless).
-	if err := state.ValidTag(tag); err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", err)
-		return exitUsage
-	}
-
-	stateDir, err := state.StateDir(root, tag)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", err)
-		return exitUsage
-	}
+	root, stateDir := ref.Root, ref.StateDir
 
 	cfg, _, code := loadConfig("eval", root)
 	if code != exitOK {
@@ -91,14 +81,25 @@ func runEval(args []string) int {
 	// between the two would otherwise pass this check and fail confusingly
 	// deep inside measure.Run instead. Verify the pinned worktree is
 	// actually there before doing any work.
-	worktreeDir := filepath.Join(stateDir, state.WorktreeName)
+	worktreeDir := ref.WorktreeDir()
 	if fi, statErr := os.Stat(worktreeDir); statErr != nil || !fi.IsDir() {
 		fmt.Fprintf(os.Stderr, "autoresearch-go eval: baseline worktree missing at %s — "+
 			"'autoresearch-go baseline -tag %s' did not finish pinning it (interrupted, or the "+
 			"directory was later removed). Re-run `autoresearch-go baseline -tag %s -force`.\n",
-			worktreeDir, tag, tag)
+			worktreeDir, ref.Tag, ref.Tag)
 		return exitUsage
 	}
+
+	// Claim the run for the duration. Two evals sharing one pinned worktree
+	// would measure each other's checkouts; the claim also tells `status`
+	// that an experiment is in flight and gives `stop -force` a process to
+	// signal. It is released on every exit path below.
+	release, err := state.ClaimEval(stateDir, os.Getpid())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "autoresearch-go eval: %v\n", err)
+		return exitUsage
+	}
+	defer release()
 
 	// Subprocess output (go build/vet/test/bench) can be large; by default
 	// it is written to run.log rather than streamed, so an unattended agent
@@ -140,13 +141,22 @@ func runEval(args []string) int {
 		}
 	}
 
-	res, meas, err := pipeline.Eval(context.Background(), pipeline.Options{
+	res, meas, err := pipeline.Eval(ctx, pipeline.Options{
 		Root:     root,
 		StateDir: stateDir,
 		Cfg:      cfg,
 		Base:     base,
 		Log:      logWriter,
 	})
+
+	// A cancelled context means the human reached for the brake mid-flight
+	// (Ctrl+C, or `stop -force`) — NOT that the candidate was rejected. It
+	// is checked before err, because a cancellation surfaces as an ordinary
+	// subprocess failure deeper down and would otherwise be reported as a
+	// build CRASH the agent might act on.
+	if ctx.Err() != nil {
+		return reportAbort(ref, base, *jsonOut)
+	}
 	if err != nil {
 		// A non-nil error here means the harness itself malfunctioned
 		// (I/O, git, a malformed baseline) — not that the candidate was
@@ -187,12 +197,90 @@ func runEval(args []string) int {
 		return exitUsage
 	}
 
+	// Read the stop request only now that the experiment is scored and
+	// recorded. eval never REFUSES to run because a stop is pending:
+	// refusing would throw away work the agent has already committed and
+	// leave that commit with no verdict. The graceful stop is the agent's
+	// to act on, after it has applied this verdict.
+	ctxRun := runContext(ref, base, experimentNumber(resultsPath))
+
 	if *jsonOut {
-		printJSON(res, timeDeltas, allocsDeltas)
+		printJSON(res, timeDeltas, allocsDeltas, ctxRun)
 	} else {
-		printHuman(res, timeDeltas, allocsDeltas, cfg)
+		printHuman(res, timeDeltas, allocsDeltas, cfg, ctxRun)
 	}
 	return res.ExitCode()
+}
+
+// reportAbort renders an eval whose context was cancelled mid-experiment.
+//
+// No results.tsv row is written, deliberately: nothing was measured, and a
+// row there is the human's record of an experiment that actually ran. The
+// exit code is exitFail rather than a new code of its own, so no existing
+// contract changes — program.md already tells the agent to treat a status it
+// does not recognize the way it treats FAIL, which is exactly right here:
+// drop the commit, and (seeing stop_requested) leave the loop.
+func reportAbort(ref runRef, base *state.Baseline, jsonOut bool) int {
+	res := verdict.Result{
+		Status:  "ABORTED",
+		Reason:  "stop_forced",
+		Score:   0,
+		Message: "eval was interrupted before the experiment could be measured; nothing was recorded",
+	}
+	rc := runContext(ref, base, experimentNumber(filepath.Join(ref.Root, results.Path)))
+	// An abort IS a stop, whether it came from `stop -force` or a bare
+	// Ctrl+C. Reporting it as one means an agent interrupted by hand exits
+	// its loop cleanly instead of starting another experiment.
+	rc.StopRequested = true
+
+	if jsonOut {
+		printJSON(res, nil, nil, rc)
+	} else {
+		fmt.Printf("\n%s\n", res.Message)
+		fmt.Printf("\nVERDICT: %s\n", res.Status)
+	}
+	return exitFail
+}
+
+// runCtx is the "where am I" half of eval's output: which run, which branch,
+// which pinned worktree, how far into the loop, and whether the human has
+// asked for a stop.
+//
+// It travels in the JSON because that is the ONLY channel the loop reads.
+// `eval --json` prints one object and nothing else by contract, so a
+// human-readable header would never reach the agent — and the human watching
+// the transcript learns where the run is only if the agent can restate it.
+type runCtx struct {
+	Tag            string `json:"tag"`
+	Branch         string `json:"branch"`
+	BaselineCommit string `json:"baseline_commit"`
+	MeasureCommit  string `json:"measure_commit"`
+	Worktree       string `json:"worktree"`
+	Experiment     int    `json:"experiment"`
+	StopRequested  bool   `json:"-"`
+}
+
+func runContext(ref runRef, base *state.Baseline, experiment int) runCtx {
+	return runCtx{
+		Tag:            ref.Tag,
+		Branch:         ref.Branch,
+		BaselineCommit: base.Commit,
+		MeasureCommit:  base.MeasureCommit,
+		Worktree:       ref.WorktreeDir(),
+		Experiment:     experiment,
+		StopRequested:  state.StopRequested(ref.StateDir),
+	}
+}
+
+// experimentNumber is the 1-based index of the experiment just recorded, or
+// the one about to run when nothing was recorded. An unreadable results.tsv
+// yields 0, meaning "unknown" — a wrong number would be worse than none.
+func experimentNumber(resultsPath string) int {
+	rows, err := results.Load(resultsPath)
+	if err != nil {
+		return 0
+	}
+	return len(rows)
 }
 
 // bestDelta returns the benchmark name and PctChange of the most negative
@@ -225,12 +313,23 @@ func allocsDeltaFor(allocsDeltas []bench.Delta, name string) float64 {
 // lead for what to try next, so it travels alongside the scored deltas.
 type jsonReport struct {
 	verdict.Result
-	Deltas       []bench.Delta `json:"deltas"`
-	AllocsDeltas []bench.Delta `json:"allocs_deltas"`
+	// StopRequested says the human has asked this run to end. It is a
+	// SIBLING of status, never a replacement for it: the verdict still
+	// stands and the agent must still apply it, then leave the loop.
+	StopRequested bool          `json:"stop_requested"`
+	Run           runCtx        `json:"run"`
+	Deltas        []bench.Delta `json:"deltas"`
+	AllocsDeltas  []bench.Delta `json:"allocs_deltas"`
 }
 
-func printJSON(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta) {
-	b, err := json.MarshalIndent(jsonReport{Result: res, Deltas: timeDeltas, AllocsDeltas: allocsDeltas}, "", "  ")
+func printJSON(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta, rc runCtx) {
+	b, err := json.MarshalIndent(jsonReport{
+		Result:        res,
+		StopRequested: rc.StopRequested,
+		Run:           rc,
+		Deltas:        timeDeltas,
+		AllocsDeltas:  allocsDeltas,
+	}, "", "  ")
 	if err != nil {
 		// jsonReport is plain structs, strings, floats and slices of the
 		// same — it cannot fail to marshal. Fall back defensively anyway,
@@ -268,7 +367,8 @@ func gateStages(cfg config.Config) []gateStage {
 // run.log) skims for a one-line answer: which gate failed, or the
 // per-benchmark deltas (time, and allocs/op as a hint) and the final
 // score, ending with the verdict.
-func printHuman(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta, cfg config.Config) {
+func printHuman(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta, cfg config.Config, rc runCtx) {
+	printRunHeader(rc)
 	stages := gateStages(cfg)
 	failedAt := -1
 	for i, s := range stages {
@@ -297,6 +397,7 @@ func printHuman(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta, cfg 
 			break
 		}
 		fmt.Printf("\nVERDICT: %s\n", res.Status)
+		printStopNotice(rc)
 		return
 	}
 
@@ -346,6 +447,25 @@ func printHuman(res verdict.Result, timeDeltas, allocsDeltas []bench.Delta, cfg 
 		res.Score, (res.Score-1)*100, cfg.MinEffectPct, worst, cfg.MaxRegressPct, guard)
 	printWarnings(res.Warnings)
 	fmt.Printf("\nVERDICT: %s\n", res.Status)
+	printStopNotice(rc)
+}
+
+// printRunHeader opens the human-readable output with the same run context
+// -json carries, so an interactive `eval` (or a reader of run.log) can see
+// which run and which experiment produced what follows.
+func printRunHeader(rc runCtx) {
+	fmt.Printf("experiment %d on %s (measuring vs %s)\n\n", rc.Experiment, rc.Branch, rc.MeasureCommit)
+}
+
+// printStopNotice goes AFTER the verdict for the same reason warnings go
+// before it: the verdict is where a skimming reader stops, and this is the
+// one thing they should read past it for.
+func printStopNotice(rc runCtx) {
+	if !rc.StopRequested {
+		return
+	}
+	fmt.Println("\nSTOP REQUESTED: apply this verdict, then exit the loop.")
+	fmt.Println("To resume instead: autoresearch-go stop -clear")
 }
 
 // printWarnings renders what qualifies the numbers above it: benchmath's
