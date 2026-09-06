@@ -51,3 +51,35 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// TestProgramMDDocumentsTheGracefulStop guards the other half of the loop's
+// contract. The loop is written as "LOOP FOREVER", so the ONLY thing that
+// ends it short of an interrupt is the agent noticing stop_requested in a
+// verdict and acting on it. If program.md stops telling the agent that, a
+// human running `autoresearch-go stop` gets no response at all.
+func TestProgramMDDocumentsTheGracefulStop(t *testing.T) {
+	s := string(ProgramMD())
+
+	for _, want := range []string{
+		"stop_requested", // the field the agent branches on
+		"autoresearch-go stop",
+	} {
+		if !contains(s, want) {
+			t.Errorf("ProgramMD() missing %q — the agent cannot honour a graceful stop without it", want)
+		}
+	}
+}
+
+// TestProgramMDTellsTheAgentToApplyTheVerdictBeforeStopping guards the
+// "graceful" in graceful stop: a stop must not abandon the verdict of the
+// experiment that just finished, or the run branch is left holding a commit
+// nothing ever decided on.
+func TestProgramMDTellsTheAgentToApplyTheVerdictBeforeStopping(t *testing.T) {
+	s := string(ProgramMD())
+	if !contains(s, "Apply this verdict") {
+		t.Error("ProgramMD() does not tell the agent to apply the current verdict before leaving the loop")
+	}
+	if !contains(s, "Do NOT start another experiment") {
+		t.Error("ProgramMD() does not tell the agent to stop starting experiments once a stop is pending")
+	}
+}

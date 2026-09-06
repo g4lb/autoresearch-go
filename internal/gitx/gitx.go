@@ -36,6 +36,13 @@ func HeadCommit(dir string) (string, error) {
 	return git(dir, "rev-parse", "--short=7", "HEAD")
 }
 
+// HeadSubject returns the first line of HEAD's commit message. It is what
+// `stop -force` prints to identify the commit an aborted experiment left
+// behind, so only the subject is wanted — never the body or its trailers.
+func HeadSubject(dir string) (string, error) {
+	return git(dir, "log", "-1", "--format=%s")
+}
+
 // CurrentBranch returns the checked-out branch name.
 func CurrentBranch(dir string) (string, error) {
 	return git(dir, "rev-parse", "--abbrev-ref", "HEAD")
