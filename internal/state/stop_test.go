@@ -118,3 +118,17 @@ func TestEvalRunningRejectsNonPositivePID(t *testing.T) {
 		t.Fatal("EvalRunning accepted pid -1; want an error")
 	}
 }
+
+func TestEvalRunningRejectsPID1(t *testing.T) {
+	// pid 1 is where `stop -force` becomes catastrophic: killEvalGroup
+	// negates the pid to reach the process group, and kill(-1, ...) means
+	// every process the user owns. Refuse it at the source, so neither
+	// signalling path can ever be handed it.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, state.EvalPIDFile), []byte("1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := state.EvalRunning(dir); err == nil {
+		t.Fatal("EvalRunning accepted pid 1; want an error")
+	}
+}
